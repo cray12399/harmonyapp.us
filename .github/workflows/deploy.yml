@@ -1,0 +1,38 @@
+name: Sync main to droplet
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: harmony-droplet-production
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Update droplet checkout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH credentials
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DROPLET_KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DROPLET_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Pull main and install server dependencies
+        env:
+          DROPLET_HOST: 164.90.134.165
+          DROPLET_USER: mern
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$DROPLET_USER@$DROPLET_HOST" \
+            'set -eu
+             git -C /home/mern/repo pull --ff-only origin main
+             npm ci --prefix /home/mern/repo/server'
