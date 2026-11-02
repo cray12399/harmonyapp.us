@@ -35,4 +35,8 @@ jobs:
             "$DROPLET_USER@$DROPLET_HOST" \
             'set -eu
              git -C /home/mern/repo pull --ff-only origin main
-             npm ci --prefix /home/mern/repo/server'
+             ln -sfn /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env
+             npm ci --prefix /home/mern/repo/server
+             pm2 startOrReload /home/mern/repo/server/ecosystem.config.cjs --env production --update-env
+             pm2 save
+             curl --fail --silent --show-error http://127.0.0.1:4000/api/ping >/dev/null'
