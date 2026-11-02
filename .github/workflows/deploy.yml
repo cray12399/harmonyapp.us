@@ -35,7 +35,8 @@ jobs:
             "$DROPLET_USER@$DROPLET_HOST" \
             'set -eu
              git -C /home/mern/repo pull --ff-only origin main
-             ln -sfn /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env
+             install -m 600 /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env.next
+             mv -f /home/mern/repo/server/.env.next /home/mern/repo/server/.env
              npm ci --prefix /home/mern/repo/server
              test -r /home/mern/repo/server/.env
              grep -q "^MONGO_URI=." /home/mern/repo/server/.env || { echo "MONGO_URI missing from server env"; exit 1; }
