@@ -1,6 +1,6 @@
 # Droplet sync workflow
 
-`.github/workflows/deploy.yml` runs after every push to `main` (including a merged pull request). It connects to the droplet as `mern`, fast-forwards `/home/mern/repo`, links the protected server environment file, installs dependencies from the lockfile, reloads the API with PM2, and checks `/api/ping` locally.
+`.github/workflows/deploy.yml` runs after every push to `main` (including a merged pull request). It connects to the droplet as `mern`, fast-forwards `/home/mern/repo`, copies the protected server environment file with owner-only permissions, installs dependencies from the lockfile, reloads the API with PM2, and checks `/api/ping` locally.
 
 ## GitHub Actions secrets
 
