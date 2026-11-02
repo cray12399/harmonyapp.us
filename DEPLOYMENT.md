@@ -1,6 +1,6 @@
 # Droplet sync workflow
 
-`.github/workflows/deploy.yml` runs after every push to `main` (including a merged pull request). It connects to the droplet as `mern`, fast-forwards `/home/mern/repo`, and installs the server dependencies from the lockfile.
+`.github/workflows/deploy.yml` runs after every push to `main` (including a merged pull request). It connects to the droplet as `mern`, fast-forwards `/home/mern/repo`, links the protected server environment file, installs dependencies from the lockfile, reloads the API with PM2, and checks `/api/ping` locally.
 
 ## GitHub Actions secrets
 
@@ -23,4 +23,17 @@ Save the contents of `~/.ssh/harmony-deploy` as the `DEPLOY_SSH_KEY` Actions sec
 
 ## Current scope
 
-This workflow syncs the repository and installs API dependencies. The droplet currently serves its starter page; the API process and Nginx routing have not been switched to the Harmony API yet. Add a build and process-restart step after the app's runtime and Nginx routes are configured.
+The droplet's existing Nginx configuration sends web traffic to port `3000` and does not yet route `/api` to the API on port `4000`. Before the API is reachable through `https://harmonyapp.us/api`, add this location block inside the HTTPS `server` block in `/etc/nginx/sites-available/harmonyapp.us`, before its existing `location /`:
+
+```nginx
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+```
+
+Then run `sudo nginx -t` and `sudo systemctl reload nginx`. After that one-time Nginx change, merged API updates will be reloaded by PM2 and checked by the workflow. Web and mobile apps are not built or deployed by this workflow yet.
