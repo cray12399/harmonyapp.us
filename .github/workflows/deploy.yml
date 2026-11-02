@@ -39,4 +39,14 @@ jobs:
              npm ci --prefix /home/mern/repo/server
              pm2 startOrReload /home/mern/repo/server/ecosystem.config.cjs --env production --update-env
              pm2 save
-             curl --fail --silent --show-error http://127.0.0.1:4000/api/ping >/dev/null'
+             attempt=0
+             until curl --fail --silent --show-error http://127.0.0.1:4000/api/ping >/dev/null; do
+               attempt=$((attempt + 1))
+               if [ "$attempt" -ge 30 ]; then
+                 pm2 status
+                 pm2 logs harmony-api --lines 100 --nostream
+                 exit 1
+               fi
+               sleep 2
+             done
+             echo "Harmony API is healthy on port 4000"'
