@@ -37,7 +37,9 @@ jobs:
              git -C /home/mern/repo pull --ff-only origin main
              ln -sfn /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env
              npm ci --prefix /home/mern/repo/server
-             node -e "const result = require('/home/mern/repo/server/node_modules/dotenv').config({ path: '/home/mern/repo/server/.env' }); if (!result.parsed || !result.parsed.MONGO_URI) { console.error('MONGO_URI missing from server env'); process.exit(1); } console.log('MONGO_URI loaded from server env');"
+             test -r /home/mern/repo/server/.env
+             grep -q "^MONGO_URI=." /home/mern/repo/server/.env || { echo "MONGO_URI missing from server env"; exit 1; }
+             echo "MONGO_URI is present in the server env"
              pm2 startOrReload /home/mern/repo/server/ecosystem.config.cjs --env production --update-env
              pm2 save
              attempt=0
