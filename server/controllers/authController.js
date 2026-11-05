@@ -1,4 +1,3 @@
-
 const bcrypt = require("bcryptjs");
 const crypto = require("node:crypto");
 const User = require("../models/User");
@@ -145,21 +144,26 @@ const verifyEmail = async (req, res) => {
 // POST /api/auth/login
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body; // Fixed: Destructure identifier instead of email
 
-    if (typeof email !== "string" || typeof password !== "string") {
+    if (typeof identifier !== "string" || typeof password !== "string") {
       return res.status(400).json({
-        error: "Email and password are required",
+        error: "Username or email and password are required",
       });
     }
 
+    const queryIdentifier = identifier.trim().toLowerCase();
+
     const user = await User.findOne({
-      email: email.trim().toLowerCase(),
+      $or: [
+        { email: queryIdentifier },
+        { username: identifier.trim() }
+      ]
     });
 
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return res.status(401).json({
-        error: "Invalid email or password",
+        error: "Invalid username/email or password",
       });
     }
 
