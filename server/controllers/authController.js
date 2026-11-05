@@ -1,23 +1,40 @@
+
 const bcrypt = require("bcryptjs");
+const crypto = require("node:crypto");
 const User = require("../models/User");
+const { sendVerificationEmail } = require("../services/emailService");
+
+const makeCode = () => String(crypto.randomInt(100000, 1000000));
+
+const hashCode = (code) =>
+  crypto.createHash("sha256").update(code).digest("hex");
 
 // POST /api/auth/register
 const register = async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Make sure all required fields were provided
-    if (!username || !email || !password) {
+    if (
+      typeof username !== "string" ||
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      username.trim().length < 3 ||
+      username.trim().length > 20 ||
+      !email.trim() ||
+      password.length < 8
+    ) {
       return res.status(400).json({
-        error: "Username, email, and password are required",
+        error: "Provide a username (3-20 characters), email, and password (at least 8 characters)",
       });
     }
 
-    // Check if username or email already exists
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim();
+
     const existingUser = await User.findOne({
       $or: [
-        { username: username },
-        { email: email.toLowerCase() },
+        { username: normalizedUsername },
+        { email: normalizedEmail },
       ],
     });
 
@@ -27,21 +44,30 @@ const register = async (req, res) => {
       });
     }
 
-    // Hash password before storing it
+    const code = makeCode();
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create user in MongoDB
     const user = await User.create({
-      username,
-      email: email.toLowerCase(),
+      username: normalizedUsername,
+      email: normalizedEmail,
       passwordHash,
       isVerified: false,
       status: 1,
+      authCode: hashCode(code),
+      authCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
     });
 
-    // Successful registration
+    try {
+      await sendVerificationEmail(normalizedEmail, code);
+    } catch (emailError) {
+      console.error("Verification email failed:", emailError.message);
+      return res.status(503).json({
+        error: "Account created, but verification email could not be sent",
+      });
+    }
+
     return res.status(201).json({
-      message: "Registration successful",
+      message: "Registration successful. Check your email for a verification code.",
       user: {
         _id: user._id,
         username: user.username,
@@ -54,9 +80,65 @@ const register = async (req, res) => {
   } catch (error) {
     console.error("Register error:", error.message);
 
-    return res.status(500).json({
-      error: "Server error",
+    if (error.code === 11000) {
+      return res.status(409).json({
+        error: "Username or email already exists",
+      });
+    }
+
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+// POST /api/auth/verify-email
+const verifyEmail = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (
+      typeof email !== "string" ||
+      typeof code !== "string" ||
+      !/^\d{6}$/.test(code)
+    ) {
+      return res.status(400).json({
+        error: "Valid email and 6-digit code are required",
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
     });
+
+    if (!user || user.isVerified || !user.authCode ||
+        !user.authCodeExpires || user.authCodeExpires <= new Date()) {
+      return res.status(400).json({
+        error: "Invalid or expired verification code",
+      });
+    }
+
+    const suppliedHash = Buffer.from(hashCode(code), "hex");
+    const storedHash = Buffer.from(user.authCode, "hex");
+
+    if (
+      suppliedHash.length !== storedHash.length ||
+      !crypto.timingSafeEqual(suppliedHash, storedHash)
+    ) {
+      return res.status(400).json({
+        error: "Invalid or expired verification code",
+      });
+    }
+
+    user.isVerified = true;
+    user.authCode = undefined;
+    user.authCodeExpires = undefined;
+    await user.save();
+
+    return res.status(200).json({
+      message: "Email verified successfully",
+    });
+  } catch (error) {
+    console.error("Verify email error:", error.message);
+    return res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -65,37 +147,28 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (typeof email !== "string" || typeof password !== "string") {
       return res.status(400).json({
         error: "Email and password are required",
       });
     }
 
-    // Find the user by email
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: email.trim().toLowerCase(),
     });
 
-    // Same response for unknown email or incorrect password
-    if (!user) {
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return res.status(401).json({
         error: "Invalid email or password",
       });
     }
 
-    // Compare entered password against stored password hash
-    const passwordMatches = await bcrypt.compare(
-      password,
-      user.passwordHash
-    );
-
-    if (!passwordMatches) {
-      return res.status(401).json({
-        error: "Invalid email or password",
+    if (!user.isVerified) {
+      return res.status(403).json({
+        error: "Please verify your email before logging in",
       });
     }
 
-    // Successful login
     return res.status(200).json({
       message: "Login successful",
       user: {
@@ -109,14 +182,8 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error("Login error:", error.message);
-
-    return res.status(500).json({
-      error: "Server error",
-    });
+    return res.status(500).json({ error: "Server error" });
   }
 };
 
-module.exports = {
-  register,
-  login,
-};
+module.exports = { register, login, verifyEmail };
