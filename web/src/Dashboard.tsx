@@ -1,6 +1,21 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+// TypeScript Interfaces for strict type safety
+interface Message {
+  sender: string;
+  text: string;
+}
+
+interface GroupChat {
+  id: number;
+  name: string;
+  avatarText: string;
+  color: string;
+  channels: string[];
+  messages: Record<string, Message[]>;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'online' | 'all' | 'add'>('online');
@@ -43,7 +58,7 @@ export default function Dashboard() {
     { id: 3, name: 'TheHulk', status: 'Online', avatarText: 'H', avatarUrl: '', color: '#23a55a', isBlocked: false, mutualFriends: ['SecondUser'], mutualGroups: ['Project Alpha'], messages: [] },
   ]);
 
-  const [groupChats, setGroupChats] = useState([
+  const [groupChats, setGroupChats] = useState<GroupChat[]>([
     { 
       id: 1, 
       name: 'Dev Team', 
@@ -578,7 +593,7 @@ export default function Dashboard() {
               <button 
                 onClick={() => {
                   if (groupInput) {
-                    const newGroup = { id: Date.now(), name: groupInput, avatarText: groupInput[0].toUpperCase(), color: '#23a55a', channels: ['general', 'discussion'], messages: { general: [], discussion: [] } };
+                    const newGroup: GroupChat = { id: Date.now(), name: groupInput, avatarText: groupInput[0].toUpperCase(), color: '#23a55a', channels: ['general', 'discussion'], messages: { general: [], discussion: [] } };
                     setGroupChats([...groupChats, newGroup]);
                     setGroupInput('');
                     setShowCreateGroupModal(false);
