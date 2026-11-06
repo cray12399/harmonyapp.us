@@ -40,7 +40,7 @@ export default function Register() {
     setMessage('Creating account and sending verification code...');
 
     try {
-      const response = await fetch('http://localhost:4000/api/auth/register', {
+      const response = await fetch('api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, username, email, password }),
@@ -62,7 +62,7 @@ export default function Register() {
     setMessage('Verifying code...');
 
     try {
-      const response = await fetch('http://localhost:4000/api/auth/verify-email', {
+      const response = await fetch('/api/auth/verify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code }),
