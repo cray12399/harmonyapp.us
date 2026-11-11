@@ -55,6 +55,7 @@ const register = async (req, res) => {
       status: 1,
       authCode: hashCode(code),
       authCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
+      authCodeLastSentAt: new Date(),
     });
 
     try {
@@ -186,4 +187,95 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login, verifyEmail };
+// POST /api/auth/resend-verification
+const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body || {};
+
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({
+        error: "Valid email is required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user || user.isVerified) {
+      return res.status(200).json({
+        message: "If the account needs verification, a code will be sent.",
+      });
+    }
+
+    const now = new Date();
+    const cooldownMs = 60 * 1000;
+
+    if (
+      user.authCodeLastSentAt &&
+      now.getTime() - user.authCodeLastSentAt.getTime() < cooldownMs
+    ) {
+      const retryAfter = Math.ceil(
+        (cooldownMs -
+          (now.getTime() - user.authCodeLastSentAt.getTime())) / 1000
+      );
+
+      res.set("Retry-After", String(retryAfter));
+
+      return res.status(429).json({
+        error: "Please wait before requesting another code.",
+        retryAfter,
+      });
+    }
+
+    const code = makeCode();
+
+    // Reserve the cooldown before sending to prevent rapid repeat requests.
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        isVerified: false,
+        $or: [
+          { authCodeLastSentAt: null },
+          { authCodeLastSentAt: { $lte: new Date(now.getTime() - cooldownMs) } },
+        ],
+      },
+      {
+        $set: {
+          authCode: hashCode(code),
+          authCodeExpires: new Date(now.getTime() + 10 * 60 * 1000),
+          authCodeLastSentAt: now,
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(429).json({
+        error: "Please wait before requesting another code.",
+        retryAfter: 60,
+      });
+    }
+
+    try {
+      await sendVerificationEmail(normalizedEmail, code);
+    } catch (emailError) {
+      console.error("Resend verification email failed:", emailError.message);
+
+      return res.status(503).json({
+        error: "Unable to send verification email. Please try again later.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Verification code sent. Please check your email.",
+    });
+  } catch (error) {
+    console.error("Resend verification error:", error.message);
+
+    return res.status(500).json({
+      error: "Server error",
+    });
+  }
+};
+
+module.exports = { register, login, verifyEmail, resendVerification };

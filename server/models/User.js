@@ -37,6 +37,12 @@ const userSchema = new mongoose.Schema({
 
   authCodeExpires: {
     type: Date,
+    default: null,
+  },
+
+  authCodeLastSentAt: {
+    type: Date,
+    default: null,
   },
 
   createdAt: {
