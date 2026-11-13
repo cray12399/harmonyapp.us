@@ -147,7 +147,7 @@ export default function Register() {
           <form onSubmit={handleRegister}>
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 'bold', color: '#b5bac1', textTransform: 'uppercase' }}>
-                Full Name <span style={{ color: '#f23f43' }}>*</span>
+                Display Name <span style={{ color: '#f23f43' }}>*</span>
               </label>
               <input
                 type="text"
