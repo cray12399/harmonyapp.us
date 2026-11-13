@@ -24,3 +24,5 @@ Save the contents of `~/.ssh/harmony-deploy` as the `DEPLOY_SSH_KEY` Actions sec
 ## Current scope
 
 Nginx serves `/home/mern/repo/web/dist` for the website and proxies `/api/` to the API on port `4000`. The workflow builds the web app with `npm ci --legacy-peer-deps` because the current web lockfile includes TypeScript 7 while `typescript-eslint` declares support only through TypeScript 6. The mobile app is not deployed by this workflow.
+
+The PM2 production configuration sets `MONGO_DB_NAME=harmony`. Mongoose uses that database name even if the connection string in the protected `.env` contains another database path. Local runs use the connection string's database unless `MONGO_DB_NAME` is set. The deployment workflow keeps the protected source `.env` readable by its owner and `harmony-env` group only.

@@ -35,6 +35,7 @@ jobs:
             "$DROPLET_USER@$DROPLET_HOST" \
             'set -eu
              umask 0002
+             chmod 640 /home/mern/harmonyapp.us/server/.env
              git -C /home/mern/repo pull --ff-only origin main
              install -m 600 /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env.next
              mv -f /home/mern/repo/server/.env.next /home/mern/repo/server/.env
