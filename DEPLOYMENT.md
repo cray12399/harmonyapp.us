@@ -1,6 +1,6 @@
 # Droplet sync workflow
 
-`.github/workflows/deploy.yml` runs after every push to `main` (including a merged pull request). It connects to the droplet as `mern`, fast-forwards `/home/mern/repo`, copies the protected server environment file with owner-only permissions, installs dependencies from the lockfile, reloads the API with PM2, and checks `/api/ping` locally.
+`.github/workflows/deploy.yml` runs after every push to `main` (including a merged pull request). It connects to the droplet as `mern`, fast-forwards `/home/mern/repo`, copies the protected server environment file with owner-only permissions, installs server dependencies, reloads the API with PM2, and checks `/api/ping` locally. It then installs the web dependencies and builds `web/dist`, which Nginx serves at `https://harmonyapp.us/`.
 
 ## GitHub Actions secrets
 
@@ -23,17 +23,4 @@ Save the contents of `~/.ssh/harmony-deploy` as the `DEPLOY_SSH_KEY` Actions sec
 
 ## Current scope
 
-The droplet's existing Nginx configuration sends web traffic to port `3000` and does not yet route `/api` to the API on port `4000`. Before the API is reachable through `https://harmonyapp.us/api`, add this location block inside the HTTPS `server` block in `/etc/nginx/sites-available/harmonyapp.us`, before its existing `location /`:
-
-```nginx
-    location ^~ /api/ {
-        proxy_pass http://127.0.0.1:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-```
-
-Then run `sudo nginx -t` and `sudo systemctl reload nginx`. After that one-time Nginx change, merged API updates will be reloaded by PM2 and checked by the workflow. Web and mobile apps are not built or deployed by this workflow yet.
+Nginx serves `/home/mern/repo/web/dist` for the website and proxies `/api/` to the API on port `4000`. The workflow builds the web app with `npm ci --legacy-peer-deps` because the current web lockfile includes TypeScript 7 while `typescript-eslint` declares support only through TypeScript 6. The mobile app is not deployed by this workflow.

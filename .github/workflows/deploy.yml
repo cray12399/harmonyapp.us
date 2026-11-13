@@ -34,6 +34,7 @@ jobs:
             -o StrictHostKeyChecking=yes \
             "$DROPLET_USER@$DROPLET_HOST" \
             'set -eu
+             umask 0002
              git -C /home/mern/repo pull --ff-only origin main
              install -m 600 /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env.next
              mv -f /home/mern/repo/server/.env.next /home/mern/repo/server/.env
@@ -53,4 +54,8 @@ jobs:
                fi
                sleep 2
              done
-             echo "Harmony API is healthy on port 4000"'
+             echo "Harmony API is healthy on port 4000"
+             npm ci --legacy-peer-deps --prefix /home/mern/repo/web
+             npm run build --prefix /home/mern/repo/web
+             test -s /home/mern/repo/web/dist/index.html
+             echo "Harmony web build is ready"'
