@@ -40,7 +40,7 @@ export default function Register() {
     setMessage('Creating account and sending verification code...');
 
     try {
-      const response = await fetch('api/auth/register', {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, username, email, password }),
