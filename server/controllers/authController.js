@@ -1,6 +1,7 @@
 
 const bcrypt = require("bcryptjs");
 const crypto = require("node:crypto");
+const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const {
   sendVerificationEmail,
@@ -179,8 +180,18 @@ const login = async (req, res) => {
       });
     }
 
+    const token = jwt.sign(
+      { userId: user._id.toString() },
+      process.env.JWT_SECRET,
+      {
+        algorithm: "HS256",
+        expiresIn: "1h",
+      }
+    );
+
     return res.status(200).json({
       message: "Login successful",
+      token,
       user: {
         _id: user._id,
         username: user.username,
