@@ -78,59 +78,8 @@ export default function Dashboard() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
 
-  // Backend API states for real conversations/messages
-  const [backendConversations, setBackendConversations] = useState<any[]>([]);
-  const [liveMessages, setLiveMessages] = useState<Message[]>([]);
-
-  // Fetch conversations from backend on mount (COMMENTED OUT)
-  useEffect(() => {
-    // fetchBackendConversations();
-  }, []);
-
-  const fetchBackendConversations = async () => {
-    /*
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch('/api/conversations', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.conversations) {
-        setBackendConversations(data.conversations);
-      }
-    } catch (err) {
-      console.error('Failed to fetch backend conversations:', err);
-    }
-    */
-  };
-
-  // Fetch messages when viewing a backend conversation/group (COMMENTED OUT)
-  useEffect(() => {
-    if ((currentView.type === 'group' || currentView.type === 'dm') && currentView.data?._id) {
-      // fetchBackendMessages(currentView.data._id);
-    }
-  }, [currentView]);
-
-  const fetchBackendMessages = async (convId: string) => {
-    /*
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`/api/conversations/${convId}/messages`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.messages) {
-        setLiveMessages(data.messages);
-      }
-    } catch (err) {
-      console.error('Failed to fetch backend messages:', err);
-    }
-    */
-  };
+  // Keep the existing local chat display until backend loading is enabled.
+  const [liveMessages] = useState<Message[]>([]);
 
   // Data lists with mutual connections support
   const [friends, setFriends] = useState([
