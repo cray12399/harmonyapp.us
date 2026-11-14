@@ -25,7 +25,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'online' | 'all' | 'add'>('online');
   
-  // Admin Mode State dynamically set based on user status
+  // Admin Mode State dynamically set based on user status (status 2 = admin)
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -35,10 +35,15 @@ export default function Dashboard() {
         const user = JSON.parse(userStr);
         if (user.status === 2) {
           setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
         }
       } catch (err) {
         console.error('Failed to parse user session', err);
+        setIsAdmin(false);
       }
+    } else {
+      setIsAdmin(false);
     }
   }, []);
 
@@ -77,12 +82,13 @@ export default function Dashboard() {
   const [backendConversations, setBackendConversations] = useState<any[]>([]);
   const [liveMessages, setLiveMessages] = useState<Message[]>([]);
 
-  // Fetch conversations from backend on mount
+  // Fetch conversations from backend on mount (COMMENTED OUT)
   useEffect(() => {
-    fetchBackendConversations();
+    // fetchBackendConversations();
   }, []);
 
   const fetchBackendConversations = async () => {
+    /*
     const token = localStorage.getItem('token');
     try {
       const res = await fetch('/api/conversations', {
@@ -97,16 +103,18 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to fetch backend conversations:', err);
     }
+    */
   };
 
-  // Fetch messages when viewing a backend conversation/group
+  // Fetch messages when viewing a backend conversation/group (COMMENTED OUT)
   useEffect(() => {
     if ((currentView.type === 'group' || currentView.type === 'dm') && currentView.data?._id) {
-      fetchBackendMessages(currentView.data._id);
+      // fetchBackendMessages(currentView.data._id);
     }
   }, [currentView]);
 
   const fetchBackendMessages = async (convId: string) => {
+    /*
     const token = localStorage.getItem('token');
     try {
       const res = await fetch(`/api/conversations/${convId}/messages`, {
@@ -121,6 +129,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to fetch backend messages:', err);
     }
+    */
   };
 
   // Data lists with mutual connections support
@@ -187,11 +196,12 @@ export default function Dashboard() {
 
   const filteredFriends = friends.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  // Send message handler integrated with backend API if conversation has an _id
+  // Send message handler integrated with local fallback state (API commented out)
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim()) return;
 
+    /*
     const token = localStorage.getItem('token');
     const convId = currentView.data?._id;
     if (convId && (currentView.type === 'dm' || currentView.type === 'group')) {
@@ -214,8 +224,9 @@ export default function Dashboard() {
         console.error('API send error, falling back to local state:', err);
       }
     }
+    */
 
-    // Fallback local UI state update if not a backend ID chat
+    // Fallback local UI state update
     if (currentView.type === 'dm') {
       const updatedFriends = friends.map(f => {
         if (f.id === currentView.data.id) {
@@ -501,7 +512,7 @@ export default function Dashboard() {
         </div>
         
         {/* Main Workspace Area */}
-        {currentView.type === 'admin' && <AdminPanel />}
+        {currentView.type === 'admin' && isAdmin && <AdminPanel />}
 
         {currentView.type === 'friends' && (
           <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
@@ -720,6 +731,7 @@ export default function Dashboard() {
               <button 
                 onClick={async () => {
                   if (groupInput) {
+                    /*
                     const token = localStorage.getItem('token');
                     try {
                       const res = await fetch('/api/conversations', {
@@ -738,6 +750,7 @@ export default function Dashboard() {
                     } catch (err) {
                       console.error('Failed to create backend group:', err);
                     }
+                    */
 
                     const newGroup: GroupChat = { id: Date.now(), name: groupInput, avatarText: groupInput[0].toUpperCase(), color: '#23a55a', channels: ['general', 'discussion'], messages: { general: [], discussion: [] } };
                     setGroupChats([...groupChats, newGroup]);
