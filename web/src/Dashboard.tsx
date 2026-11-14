@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import AdminPanel from './AdminPanel';
 
 // TypeScript Interfaces for strict type safety
 interface Message {
+  _id?: string;
   sender: string;
-  text: string;
+  text?: string;
+  content?: string;
+  createdAt?: string;
 }
 
 interface GroupChat {
   id: number;
+  _id?: string;
   name: string;
   avatarText: string;
   color: string;
@@ -20,8 +25,30 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'online' | 'all' | 'add'>('online');
   
-  // Navigation State
-  const [currentView, setCurrentView] = useState<{ type: 'friends' | 'dm' | 'group'; data?: any; channel?: string }>({ type: 'friends' });
+  // Admin Mode State dynamically set based on user status (status 2 = admin)
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        if (user.status === 2) {
+          setIsAdmin(true);
+        } else {
+          setIsAdmin(false);
+        }
+      } catch (err) {
+        console.error('Failed to parse user session', err);
+        setIsAdmin(false);
+      }
+    } else {
+      setIsAdmin(false);
+    }
+  }, []);
+
+  // Navigation State (supports 'admin' view mode)
+  const [currentView, setCurrentView] = useState<{ type: 'friends' | 'dm' | 'group' | 'admin'; data?: any; channel?: string }>({ type: 'friends' });
 
   // Sidebar Collapse States
   const [leftSidebarExpanded, setLeftSidebarExpanded] = useState(true);
@@ -50,6 +77,9 @@ export default function Dashboard() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
+
+  // Keep the existing local chat display until backend loading is enabled.
+  const [liveMessages] = useState<Message[]>([]);
 
   // Data lists with mutual connections support
   const [friends, setFriends] = useState([
@@ -115,11 +145,37 @@ export default function Dashboard() {
 
   const filteredFriends = friends.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  // Send message handler inside active DM or Group Channel
-  const handleSendMessage = (e: React.FormEvent) => {
+  // Send message handler integrated with local fallback state (API commented out)
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim()) return;
 
+    /*
+    const token = localStorage.getItem('token');
+    const convId = currentView.data?._id;
+    if (convId && (currentView.type === 'dm' || currentView.type === 'group')) {
+      try {
+        const res = await fetch(`/api/conversations/${convId}/messages`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ content: messageInput.trim() }),
+        });
+        const data = await res.json();
+        if (res.ok && data.message) {
+          setLiveMessages((prev) => [...prev, data.message]);
+          setMessageInput('');
+          return;
+        }
+      } catch (err) {
+        console.error('API send error, falling back to local state:', err);
+      }
+    }
+    */
+
+    // Fallback local UI state update
     if (currentView.type === 'dm') {
       const updatedFriends = friends.map(f => {
         if (f.id === currentView.data.id) {
@@ -192,9 +248,9 @@ export default function Dashboard() {
           {leftSidebarExpanded && <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Home</span>}
         </div>
 
-        <div style={{ width: '100%', height: '2px', backgroundColor: '#35363c', borderRadius: 'px', margin: '4px 0' }}></div>
+        <div style={{ width: '100%', height: '2px', backgroundColor: '#35363c', margin: '4px 0' }}></div>
 
-        {/* Group Chats List: Icons when shut, Icons + Titles when expanded */}
+        {/* Group Chats List */}
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {groupChats.map(group => {
             const isSelected = currentView.type === 'group' && currentView.data?.id === group.id;
@@ -229,7 +285,7 @@ export default function Dashboard() {
           })}
         </div>
 
-        <div style={{ width: '100%', height: '2px', backgroundColor: '#35363c', borderRadius: '1px', margin: '4px 0' }}></div>
+        <div style={{ width: '100%', height: '2px', backgroundColor: '#35363c', margin: '4px 0' }}></div>
 
         {/* Plus Icon to Create Group Chat */}
         <div 
@@ -290,10 +346,30 @@ export default function Dashboard() {
             <div>
               <div 
                 onClick={() => setCurrentView({ type: 'friends' })}
-                style={{ padding: '10px 12px', backgroundColor: currentView.type === 'friends' ? '#5865F2' : 'transparent', color: '#ffffff', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginBottom: '16px' }}
+                style={{ padding: '10px 12px', backgroundColor: currentView.type === 'friends' ? '#5865F2' : 'transparent', color: '#ffffff', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}
               >
                 👥 Friends
               </div>
+
+              {/* Admin Panel Nav Button */}
+              {isAdmin && (
+                <div 
+                  onClick={() => setCurrentView({ type: 'admin' })}
+                  style={{ 
+                    padding: '10px 12px', 
+                    backgroundColor: currentView.type === 'admin' ? '#f23f43' : 'rgba(242, 63, 67, 0.12)', 
+                    color: currentView.type === 'admin' ? '#ffffff' : '#f23f43', 
+                    border: '1px solid rgba(242, 63, 67, 0.35)',
+                    borderRadius: '4px', 
+                    cursor: 'pointer', 
+                    fontSize: '14px', 
+                    fontWeight: 'bold', 
+                    marginBottom: '16px' 
+                  }}
+                >
+                  🛡️ Admin Panel
+                </div>
+              )}
               
               <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#949ba4', marginBottom: '8px', paddingLeft: '8px', textTransform: 'uppercase' }}>
                 Direct Messages
@@ -354,6 +430,15 @@ export default function Dashboard() {
             </div>
           )}
 
+          {currentView.type === 'admin' && (
+            <div style={{ fontWeight: 'bold', color: '#f2f3f5', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px' }}>
+              <span>🛡️ Admin Dashboard</span>
+              <span style={{ backgroundColor: '#f23f43', color: '#fff', fontSize: '11px', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                Admin Mode
+              </span>
+            </div>
+          )}
+
           {currentView.type === 'dm' && (
             <div style={{ fontWeight: 'bold', color: '#f2f3f5', fontSize: '15px' }}>
               💬 @{currentView.data.name} {currentView.data.isBlocked && <span style={{ color: '#f23f43', fontSize: '12px' }}>(Blocked)</span>}
@@ -376,6 +461,8 @@ export default function Dashboard() {
         </div>
         
         {/* Main Workspace Area */}
+        {currentView.type === 'admin' && isAdmin && <AdminPanel />}
+
         {currentView.type === 'friends' && (
           <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
             <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#949ba4', marginBottom: '16px', textTransform: 'uppercase' }}>
@@ -451,25 +538,25 @@ export default function Dashboard() {
               )}
 
               {(() => {
-                const activeMessages = currentView.type === 'dm' 
+                const activeMessages = liveMessages.length > 0 ? liveMessages : (currentView.type === 'dm' 
                   ? currentView.data.messages 
-                  : (currentView.data.messages[currentView.channel || currentView.data.channels[0]] || []);
+                  : (currentView.data.messages[currentView.channel || currentView.data.channels[0]] || []));
 
                 if (activeMessages.length === 0) {
                   return <div style={{ color: '#949ba4', textAlign: 'center', marginTop: '40px' }}>This is the beginning of your chat history.</div>;
                 }
 
                 return activeMessages.map((m: any, idx: number) => (
-                  <div key={idx} style={{ display: 'flex', gap: '12px' }}>
+                  <div key={m._id || idx} style={{ display: 'flex', gap: '12px' }}>
                     <div style={{ width: '36px', height: '36px', backgroundColor: '#5865F2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', flexShrink: 0 }}>
-                      {m.sender[0]}
+                      {(m.sender || 'U')[0]}
                     </div>
                     <div style={{ minWidth: 0, overflow: 'hidden' }}>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}>
-                        <span style={{ fontWeight: 'bold', color: '#f2f3f5' }}>{m.sender}</span>
-                        <span style={{ fontSize: '12px', color: '#949ba4' }}>Today at 3:15 PM</span>
+                        <span style={{ fontWeight: 'bold', color: '#f2f3f5' }}>{m.sender || 'User'}</span>
+                        <span style={{ fontSize: '12px', color: '#949ba4' }}>{m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today at 3:15 PM'}</span>
                       </div>
-                      <div style={{ color: '#dbdee1', fontSize: '14px', marginTop: '4px', wordBreak: 'break-word' }}>{m.text}</div>
+                      <div style={{ color: '#dbdee1', fontSize: '14px', marginTop: '4px', wordBreak: 'break-word' }}>{m.text || m.content}</div>
                     </div>
                   </div>
                 ));
@@ -591,8 +678,29 @@ export default function Dashboard() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button onClick={() => setShowCreateGroupModal(false)} style={{ backgroundColor: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}>Cancel</button>
               <button 
-                onClick={() => {
+                onClick={async () => {
                   if (groupInput) {
+                    /*
+                    const token = localStorage.getItem('token');
+                    try {
+                      const res = await fetch('/api/conversations', {
+                        method: 'POST',
+                        headers: { 
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ type: 1, name: groupInput.trim(), memberIds: [] }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.conversation) {
+                        setBackendConversations(prev => [data.conversation, ...prev]);
+                        setCurrentView({ type: 'group', data: data.conversation, channel: 'general' });
+                      }
+                    } catch (err) {
+                      console.error('Failed to create backend group:', err);
+                    }
+                    */
+
                     const newGroup: GroupChat = { id: Date.now(), name: groupInput, avatarText: groupInput[0].toUpperCase(), color: '#23a55a', channels: ['general', 'discussion'], messages: { general: [], discussion: [] } };
                     setGroupChats([...groupChats, newGroup]);
                     setGroupInput('');
@@ -643,6 +751,24 @@ export default function Dashboard() {
                 {showPhone ? '+1 (555) 019-2834' : '•••••••-2834'}
               </div>
             </div>
+
+            {isAdmin && (
+              <div style={{ marginBottom: '20px', borderTop: '1px solid #3f4147', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '14px', color: '#f2f3f5', fontWeight: 'bold' }}>Admin Controls</div>
+                  <div style={{ fontSize: '12px', color: '#949ba4' }}>Manage users, roles, and account statuses</div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowSettingsModal(false);
+                    setCurrentView({ type: 'admin' });
+                  }}
+                  style={{ backgroundColor: '#f23f43', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                >
+                  Open Admin Panel
+                </button>
+              </div>
+            )}
 
             <div style={{ marginBottom: '20px', borderTop: '1px solid #3f4147', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '14px', color: '#f2f3f5', fontWeight: '500' }}>Password & Security</span>
@@ -729,7 +855,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div style={{ borderTop: '1px side #3f4147', paddingTop: '16px', marginBottom: '24px' }}>
+            <div style={{ borderTop: '1px solid #3f4147', paddingTop: '16px', marginBottom: '24px' }}>
               <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#b5bac1', marginBottom: '6px', textTransform: 'uppercase' }}>Mutual Group Chats</div>
               <div style={{ color: '#dbdee1', fontSize: '14px' }}>
                 {viewProfileUser.mutualGroups && viewProfileUser.mutualGroups.length > 0 ? viewProfileUser.mutualGroups.join(', ') : 'No mutual group chats'}
