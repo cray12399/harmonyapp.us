@@ -15,24 +15,28 @@ const hashCode = (code) =>
 // POST /api/auth/register
 const register = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, nickname, email, password } = req.body;
 
     if (
       typeof username !== "string" ||
+      typeof nickname !== "string" ||
       typeof email !== "string" ||
       typeof password !== "string" ||
       username.trim().length < 3 ||
       username.trim().length > 20 ||
+      nickname.trim().length < 1 ||
+      nickname.trim().length > 32 ||
       !email.trim() ||
       password.length < 8
     ) {
       return res.status(400).json({
-        error: "Provide a username (3-20 characters), email, and password (at least 8 characters)",
+        error: "Provide a username (3-20 characters), nickname (1-32 characters), email, and password (at least 8 characters)",
       });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedUsername = username.trim();
+    const normalizedNickname = nickname.trim();
 
     const existingUser = await User.findOne({
       $or: [
@@ -52,6 +56,7 @@ const register = async (req, res) => {
 
     const user = await User.create({
       username: normalizedUsername,
+      nickname: normalizedNickname,
       email: normalizedEmail,
       passwordHash,
       isVerified: false,
@@ -75,6 +80,7 @@ const register = async (req, res) => {
       user: {
         _id: user._id,
         username: user.username,
+        nickname: user.nickname,
         email: user.email,
         isVerified: user.isVerified,
         status: user.status,
@@ -178,6 +184,7 @@ const login = async (req, res) => {
       user: {
         _id: user._id,
         username: user.username,
+        nickname: user.nickname,
         email: user.email,
         isVerified: user.isVerified,
         status: user.status,
