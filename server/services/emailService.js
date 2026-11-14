@@ -48,4 +48,26 @@ const sendVerificationEmail = async (email, code) => {
   }
 };
 
-module.exports = { sendVerificationEmail };
+// Send a password reset code
+const sendPasswordResetEmail = async (email, code) => {
+  if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+    throw new Error("Email service is not configured");
+  }
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+
+  const { data, error } = await resend.emails.send({
+    from: process.env.EMAIL_FROM,
+    to: email,
+    subject: "Reset your Harmony password",
+    text: `Your Harmony password reset code is ${code}. It expires in 10 minutes. If you did not request this, you can ignore this email.`,
+  });
+
+  if (error) {
+    throw new Error("Failed to send password reset email");
+  }
+
+  return data;
+};
+
+module.exports = { sendVerificationEmail, sendPasswordResetEmail };

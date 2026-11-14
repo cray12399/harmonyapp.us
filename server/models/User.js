@@ -37,6 +37,37 @@ const userSchema = new mongoose.Schema({
 
   authCodeExpires: {
     type: Date,
+    default: null,
+  },
+
+  authCodeLastSentAt: {
+    type: Date,
+    default: null,
+  },
+
+  resetPasswordCode: {
+    type: String,
+    select: false,
+  },
+
+  resetPasswordExpires: {
+    type: Date,
+    select: false,
+  },
+
+  resetPasswordLastSentAt: {
+    type: Date,
+    default: null,
+  },
+
+  resetPasswordAttempts: {
+    type: Number,
+    default: 0,
+  },
+
+ resetPasswordLockedUntil: {
+    type: Date,
+    default: null,
   },
 
   createdAt: {

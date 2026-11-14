@@ -1,7 +1,10 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("node:crypto");
 const User = require("../models/User");
-const { sendVerificationEmail } = require("../services/emailService");
+const {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} = require("../services/emailService");
 
 const makeCode = () => String(crypto.randomInt(100000, 1000000));
 
@@ -68,6 +71,7 @@ const register = async (req, res) => {
       status: 1,
       authCode: hashCode(code),
       authCodeExpires: new Date(Date.now() + 10 * 60 * 1000),
+      authCodeLastSentAt: new Date(),
     });
 
     console.log("[AUTH CONTROLLER] User created successfully in MongoDB with ID:", user._id);
@@ -187,4 +191,373 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login, verifyEmail };
+// POST /api/auth/resend-verification
+const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body || {};
+
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({
+        error: "Valid email is required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user || user.isVerified) {
+      return res.status(200).json({
+        message: "If the account needs verification, a code will be sent.",
+      });
+    }
+
+    const now = new Date();
+    const cooldownMs = 60 * 1000;
+
+    if (
+      user.authCodeLastSentAt &&
+      now.getTime() - user.authCodeLastSentAt.getTime() < cooldownMs
+    ) {
+      const retryAfter = Math.ceil(
+        (cooldownMs -
+          (now.getTime() - user.authCodeLastSentAt.getTime())) / 1000
+      );
+
+      res.set("Retry-After", String(retryAfter));
+
+      return res.status(429).json({
+        error: "Please wait before requesting another code.",
+        retryAfter,
+      });
+    }
+
+    const code = makeCode();
+
+    // Reserve the cooldown before sending to prevent rapid repeat requests.
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        isVerified: false,
+        $or: [
+          { authCodeLastSentAt: null },
+          { authCodeLastSentAt: { $lte: new Date(now.getTime() - cooldownMs) } },
+        ],
+      },
+      {
+        $set: {
+          authCode: hashCode(code),
+          authCodeExpires: new Date(now.getTime() + 10 * 60 * 1000),
+          authCodeLastSentAt: now,
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(429).json({
+        error: "Please wait before requesting another code.",
+        retryAfter: 60,
+      });
+    }
+
+    try {
+      await sendVerificationEmail(normalizedEmail, code);
+    } catch (emailError) {
+      console.error("Resend verification email failed:", emailError.message);
+
+      return res.status(503).json({
+        error: "Unable to send verification email. Please try again later.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Verification code sent. Please check your email.",
+    });
+  } catch (error) {
+    console.error("Resend verification error:", error.message);
+
+    return res.status(500).json({
+      error: "Server error",
+    });
+  }
+};
+
+// POST /api/auth/forgot-password
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body || {};
+
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({
+        error: "Valid email is required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // Avoid revealing whether an email address is registered.
+    const successMessage = {
+      message: "If the account exists, a password reset code will be sent.",
+    };
+
+    if (!user) {
+      return res.status(200).json(successMessage);
+    }
+
+    const now = new Date();
+    const cooldownMs = 60 * 1000;
+
+    // Do not issue another code during an active lockout
+    if (
+      user.resetPasswordLockedUntil &&
+      user.resetPasswordLockedUntil > now
+    ) {
+      return res.status(200).json(successMessage);
+    }
+
+    // Allow a new reset request after the lockout expires
+    if (
+      user.resetPasswordLockedUntil &&
+      user.resetPasswordLockedUntil <= now
+    ) {
+      await User.updateOne(
+        {
+          _id: user._id,
+          resetPasswordLockedUntil: { $lte: now },
+        },
+        {
+          $set: {
+            resetPasswordLastSentAt: null,
+          },
+        }
+      );
+    }
+
+    if (
+      user.resetPasswordLastSentAt &&
+      now.getTime() - user.resetPasswordLastSentAt.getTime() < cooldownMs
+    ) {
+      return res.status(200).json(successMessage);
+    }
+
+    const code = makeCode();
+
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        $and: [
+          {
+            $or: [
+              { resetPasswordLockedUntil: null },
+              { resetPasswordLockedUntil: { $lte: now } },
+            ],
+          },
+          {
+            $or: [
+              { resetPasswordLastSentAt: null },
+              {
+                resetPasswordLastSentAt: {
+                  $lte: new Date(now.getTime() - cooldownMs),
+                },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        $set: {
+          resetPasswordCode: hashCode(code),
+          resetPasswordExpires: new Date(now.getTime() + 10 * 60 * 1000),
+          resetPasswordLastSentAt: now,
+          resetPasswordAttempts: 0,
+          resetPasswordLockedUntil: null,
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(200).json(successMessage);
+    }
+
+    try {
+      await sendPasswordResetEmail(normalizedEmail, code);
+    } catch (emailError) {
+      console.error("Password reset email failed:", emailError.message);
+
+      // Clear the failed reset request only if it is still current.
+      await User.updateOne(
+        {
+          _id: updatedUser._id,
+          resetPasswordCode: hashCode(code),
+        },
+        {
+          $unset: {
+            resetPasswordCode: "",
+            resetPasswordExpires: "",
+          },
+          $set: {
+            resetPasswordLastSentAt: null,
+          },
+        }
+      );
+
+      return res.status(200).json(successMessage);
+    }
+
+    return res.status(200).json(successMessage);
+  } catch (error) {
+    console.error("Forgot password error:", error.message);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+// POST /api/auth/reset-password
+const resetPassword = async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body || {};
+
+    if (
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof code !== "string" ||
+      !/^\d{6}$/.test(code) ||
+      typeof newPassword !== "string" ||
+      newPassword.length < 8
+    ) {
+      return res.status(400).json({
+        error: "Valid email, 6-digit code, and new password (at least 8 characters) are required",
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+    }).select("+resetPasswordCode +resetPasswordExpires");
+
+    if (
+      !user ||
+      !user.resetPasswordCode ||
+      !user.resetPasswordExpires ||
+      user.resetPasswordExpires <= new Date()
+    ) {
+      return res.status(400).json({
+        error: "Invalid or expired reset code",
+      });
+    }
+
+    // Block attempts while the reset code is locked
+    if (
+      user.resetPasswordAttempts >= 5 ||
+      (user.resetPasswordLockedUntil &&
+        user.resetPasswordLockedUntil > new Date())
+    ) {
+      return res.status(429).json({
+        error: "Too many incorrect attempts. Request a new code later.",
+      });
+    }
+
+    const suppliedHash = Buffer.from(hashCode(code), "hex");
+    const storedHash = Buffer.from(user.resetPasswordCode, "hex");
+
+    if (
+      suppliedHash.length !== storedHash.length ||
+      !crypto.timingSafeEqual(suppliedHash, storedHash)
+    ) {
+      const updated = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          resetPasswordCode: user.resetPasswordCode,
+          resetPasswordAttempts: { $lt: 5 },
+        },
+        {
+          $inc: { resetPasswordAttempts: 1 },
+        },
+        { new: true }
+      );
+
+      if (!updated) {
+        return res.status(429).json({
+          error: "Too many incorrect attempts.",
+        });
+      }
+
+      if (updated.resetPasswordAttempts >= 5) {
+        await User.updateOne(
+          {
+            _id: user._id,
+            resetPasswordCode: user.resetPasswordCode,
+            resetPasswordAttempts: { $gte: 5 },
+          },
+          {
+            $set: {
+              resetPasswordLockedUntil: new Date(Date.now() + 15 * 60 * 1000),
+              },
+            }
+        );
+
+        return res.status(429).json({
+          error: "Too many incorrect attempts. Try again in 15 minutes.",
+        });
+      }
+
+      return res.status(400).json({
+        error: "Invalid or expired reset code",
+      });
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        resetPasswordCode: user.resetPasswordCode,
+        resetPasswordExpires: { $gt: new Date() },
+        resetPasswordAttempts: { $lt: 5 },
+        $or: [
+          { resetPasswordLockedUntil: null },
+          { resetPasswordLockedUntil: { $lte: new Date() } },
+        ],
+      },
+      {
+        $set: {
+          passwordHash: newPasswordHash,
+          resetPasswordAttempts: 0,
+          resetPasswordLockedUntil: null,
+        },
+        $unset: {
+          resetPasswordCode: "",
+          resetPasswordExpires: "",
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(400).json({
+        error: "Invalid or expired reset code",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Password reset successful. You can now log in.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error.message);
+
+    return res.status(500).json({
+      error: "Server error",
+    });
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  verifyEmail,
+  resendVerification,
+  forgotPassword,
+  resetPassword,
+};
