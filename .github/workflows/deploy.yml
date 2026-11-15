@@ -37,12 +37,24 @@ jobs:
              umask 0002
              chmod 640 /home/mern/harmonyapp.us/server/.env
              git -C /home/mern/repo pull --ff-only origin main
+             source_env=/home/mern/harmonyapp.us/server/.env
+             if ! grep -q "^JWT_SECRET=." "$source_env"; then
+               temp_env="$(mktemp /home/mern/harmonyapp.us/server/.env.XXXXXX)"
+               sed "/^JWT_SECRET=/d" "$source_env" > "$temp_env"
+               printf "\nJWT_SECRET=%s\n" "$(openssl rand -hex 32)" >> "$temp_env"
+               chgrp harmony-env "$temp_env"
+               chmod 640 "$temp_env"
+               mv "$temp_env" "$source_env"
+             fi
              install -m 600 /home/mern/harmonyapp.us/server/.env /home/mern/repo/server/.env.next
              mv -f /home/mern/repo/server/.env.next /home/mern/repo/server/.env
              npm ci --prefix /home/mern/repo/server
+             npm test --prefix /home/mern/repo/server
              test -r /home/mern/repo/server/.env
              grep -q "^MONGO_URI=." /home/mern/repo/server/.env || { echo "MONGO_URI missing from server env"; exit 1; }
              echo "MONGO_URI is present in the server env"
+             grep -q "^JWT_SECRET=." /home/mern/repo/server/.env || { echo "JWT_SECRET missing from server env"; exit 1; }
+             echo "JWT_SECRET is present in the server env"
              pm2 startOrReload /home/mern/repo/server/ecosystem.config.cjs --env production --update-env
              pm2 save
              attempt=0
