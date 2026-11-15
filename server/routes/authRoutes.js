@@ -10,6 +10,7 @@ const {
 
 const authMiddleware = require("../middleware/authMiddleware");
 const router = express.Router();
+const { getProfile } = require("../controllers/profileController");
 
 router.post("/register", register);
 router.post("/login", login);
@@ -18,11 +19,6 @@ router.post("/resend-verification", resendVerification);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 
-router.get("/me", authMiddleware, (req, res) => {
-  return res.status(200).json({
-    message: "Authenticated successfully",
-    userId: req.user.userId,
-  });
-});
+router.get("/me", authMiddleware, getProfile);
 
 module.exports = router;
