@@ -10,7 +10,7 @@ const {
 
 const authMiddleware = require("../middleware/authMiddleware");
 const router = express.Router();
-const { getProfile } = require("../controllers/profileController");
+const { getProfile, updateProfile } = require("../controllers/profileController");
 
 router.post("/register", register);
 router.post("/login", login);
@@ -20,5 +20,6 @@ router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 
 router.get("/me", authMiddleware, getProfile);
+router.patch("/me", authMiddleware, updateProfile);
 
 module.exports = router;
