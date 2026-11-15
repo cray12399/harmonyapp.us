@@ -127,24 +127,17 @@ export default function AdminPanel() {
 
   return (
     <div className="h-admin">
-      <header className="h-admin-header">
-        <div>
-          <h1>Admin panel</h1>
-          <p>Manage accounts and review reported messages.</p>
-        </div>
-        <button className="h-button" onClick={refresh} disabled={loading}>Refresh</button>
-      </header>
-
       {error && <div className="h-alert h-error" role="alert">{error}</div>}
       {notice && <div className="h-alert h-notice" role="status">{notice}</div>}
 
       <div className="h-tabs">
         <button className={section === 'users' ? 'h-active' : ''} onClick={() => setSection('users')}>
-          Users ({users.length})
+          👥 User Management ({users.length})
         </button>
         <button className={section === 'reports' ? 'h-active' : ''} onClick={() => setSection('reports')}>
-          Reports ({pendingCount} pending)
+          🚩 Reported Messages {pendingCount > 0 && '(' + pendingCount + ' Pending)'}
         </button>
+        <button className="h-refresh" onClick={refresh} disabled={loading}>Refresh</button>
       </div>
 
       <div className="h-admin-filters">
@@ -176,15 +169,20 @@ export default function AdminPanel() {
         <div className="h-table-wrap">
           <table className="h-table">
             <thead><tr>
-              <th>Username</th><th>Email</th><th>Verified</th><th>Status</th><th>Actions</th>
+              <th>ID</th><th>Username</th><th>Email</th><th>Verified</th><th>Status</th><th>Actions</th>
             </tr></thead>
             <tbody>
               {visibleUsers.map((user) => (
                 <tr key={user._id}>
+                  <td className="h-muted">{user._id.slice(-6)}</td>
                   <td>@{user.username}</td>
                   <td>{user.email}</td>
                   <td>{user.isVerified ? 'Yes' : 'No'}</td>
-                  <td>{user.status === 2 ? 'Admin' : user.status === 1 ? 'Active' : 'Disabled'}</td>
+                  <td>
+                    <span className={'h-status h-status-' + user.status}>
+                      {user.status === 2 ? 'Admin' : user.status === 1 ? 'Active' : 'Disabled'}
+                    </span>
+                  </td>
                   <td>
                     {user.status === 2 ? (
                       <span className="h-muted">Protected admin</span>

@@ -19,6 +19,9 @@ export default function Dashboard() {
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [view, setView] = useState<'chat' | 'admin'>('chat');
+  const [leftSidebarExpanded, setLeftSidebarExpanded] = useState(true);
+  const [rightSidebarExpanded, setRightSidebarExpanded] = useState(true);
+  const [dmSearch, setDmSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [error, setError] = useState('');
@@ -36,6 +39,10 @@ export default function Dashboard() {
   const selected = conversations.find((conversation) => conversation._id === selectedId);
   const groups = conversations.filter((conversation) => conversation.type === 1);
   const directMessages = conversations.filter((conversation) => conversation.type === 0);
+  const filteredDirectMessages = directMessages.filter((conversation) =>
+    (conversation.members.find((member) => member && member._id !== account?._id)?.username || '')
+      .toLowerCase().includes(dmSearch.toLowerCase())
+  );
 
   const conversationName = (conversation: Conversation) => {
     if (conversation.type === 1) return conversation.name || 'Unnamed group';
@@ -144,14 +151,14 @@ export default function Dashboard() {
     }
   };
 
-  const startDirectMessage = async () => {
-    if (!dmUserId) return;
+  const startDirectMessageFor = async (userId: string) => {
+    if (!userId) return;
     setError('');
     setBusy(true);
     try {
       const data = await api<{ conversation: Conversation }>('/api/conversations', {
         method: 'POST',
-        body: { type: 0, memberIds: [dmUserId] },
+        body: { type: 0, memberIds: [userId] },
       });
       await reloadConversations();
       setDmUserId('');
@@ -162,6 +169,8 @@ export default function Dashboard() {
       setBusy(false);
     }
   };
+
+  const startDirectMessage = () => { void startDirectMessageFor(dmUserId); };
 
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
@@ -234,72 +243,131 @@ export default function Dashboard() {
 
   return (
     <div className="h-shell">
-      <aside className="h-sidebar">
-        <div className="h-brand">Harmony</div>
-        <div className="h-sidebar-heading">Groups</div>
+      <aside className={'h-servers' + (leftSidebarExpanded ? '' : ' h-collapsed')}>
+        <button className="h-collapse" onClick={() => setLeftSidebarExpanded(!leftSidebarExpanded)}>
+          {leftSidebarExpanded ? '◄ Collapse' : '►'}
+        </button>
+        <button
+          className={'h-server-home' + (!selected && view === 'chat' ? ' h-active' : '')}
+          onClick={() => {
+            setSelectedId(null);
+            sessionStorage.removeItem('selectedConversationId');
+            setView('chat');
+          }}
+        >
+          <span className="h-server-icon">H</span>
+          {leftSidebarExpanded && <strong>Home</strong>}
+        </button>
+        <div className="h-server-separator" />
         {groups.map((conversation) => (
           <button
-            className={'h-nav-item' + (selectedId === conversation._id && view === 'chat' ? ' h-active' : '')}
+            className={'h-server-group' + (selectedId === conversation._id && view === 'chat' ? ' h-active' : '')}
             key={conversation._id}
             onClick={() => selectConversation(conversation)}
+            title={conversationName(conversation)}
           >
-            # {conversationName(conversation)}
+            <span className="h-server-icon">{conversationName(conversation)[0].toUpperCase()}</span>
+            {leftSidebarExpanded && <span>{conversationName(conversation)}</span>}
           </button>
         ))}
-        {groups.length === 0 && <p className="h-muted">No groups yet.</p>}
-        <button className="h-button h-create" onClick={() => { setError(''); setShowGroupForm(true); }}>
-          + Create group
+        {groups.length === 0 && leftSidebarExpanded && <p className="h-muted">No groups yet.</p>}
+        <div className="h-server-separator" />
+        <button className="h-server-group h-new-group" onClick={() => { setError(''); setShowGroupForm(true); }}>
+          <span className="h-server-icon">+</span>
+          {leftSidebarExpanded && <span>New Group</span>}
         </button>
+      </aside>
 
-        <div className="h-sidebar-heading">Direct messages</div>
-        {directMessages.map((conversation) => (
-          <button
-            className={'h-nav-item' + (selectedId === conversation._id && view === 'chat' ? ' h-active' : '')}
-            key={conversation._id}
-            onClick={() => selectConversation(conversation)}
-          >
-            @ {conversationName(conversation)}
-          </button>
-        ))}
-        <div className="h-dm-create">
-          <select value={dmUserId} onChange={(event) => setDmUserId(event.target.value)}>
-            <option value="">Choose a user</option>
-            {eligibleUsers.map((user) => (
-              <option key={user._id} value={user._id}>{user.username}</option>
-            ))}
-          </select>
-          <button className="h-button" disabled={!dmUserId || busy} onClick={startDirectMessage}>
-            Start DM
-          </button>
+      <aside className="h-sidebar">
+        <div className="h-nav-top">
+          {selected?.type === 1 && view === 'chat'
+            ? <strong>{conversationName(selected)}</strong>
+            : <input
+                aria-label="Search direct messages"
+                value={dmSearch}
+                onChange={(event) => setDmSearch(event.target.value)}
+                placeholder="Search through your conversations..."
+              />}
         </div>
-
-        {account?.status === 2 && (
-          <button
-            className={'h-nav-item h-admin-link' + (view === 'admin' ? ' h-active' : '')}
-            onClick={() => setView('admin')}
-          >
-            🛡 Admin panel
-          </button>
-        )}
+        <div className="h-sidebar-scroll">
+          {selected?.type === 1 && view === 'chat' ? (
+            <>
+              <div className="h-sidebar-heading">Text Channels</div>
+              <div className="h-nav-item h-active">💬 general</div>
+            </>
+          ) : (
+            <>
+              <button
+                className={'h-nav-item h-friends-link' + (!selected && view === 'chat' ? ' h-active' : '')}
+                onClick={() => {
+                  setSelectedId(null);
+                  sessionStorage.removeItem('selectedConversationId');
+                  setView('chat');
+                }}
+              >
+                👥 People
+              </button>
+              {account?.status === 2 && (
+                <button
+                  className={'h-nav-item h-admin-link' + (view === 'admin' ? ' h-active' : '')}
+                  onClick={() => setView('admin')}
+                >
+                  🛡️ Admin Panel
+                </button>
+              )}
+              <div className="h-sidebar-heading">Direct Messages</div>
+              {filteredDirectMessages.map((conversation) => (
+                <button
+                  className={'h-nav-item h-dm-item' + (selectedId === conversation._id && view === 'chat' ? ' h-active' : '')}
+                  key={conversation._id}
+                  onClick={() => selectConversation(conversation)}
+                >
+                  <span className="h-small-avatar">{conversationName(conversation)[0].toUpperCase()}</span>
+                  {conversationName(conversation)}
+                </button>
+              ))}
+              <div className="h-dm-create">
+                <select value={dmUserId} onChange={(event) => setDmUserId(event.target.value)}>
+                  <option value="">Choose a user</option>
+                  {eligibleUsers.map((user) => (
+                    <option key={user._id} value={user._id}>{user.username}</option>
+                  ))}
+                </select>
+                <button className="h-button" disabled={!dmUserId || busy} onClick={startDirectMessage}>
+                  Start DM
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         <div className="h-profile">
-          <strong>@{account?.username}</strong>
-          <button onClick={logOut}>Log out</button>
+          <span className="h-small-avatar">{account?.username?.[0].toUpperCase() || '?'}</span>
+          <div><strong>@{account?.username}</strong><small>Online</small></div>
         </div>
       </aside>
 
       <main className="h-main">
+        <header className="h-header">
+          <div className="h-header-title">
+            <strong>
+              {view === 'admin'
+                ? '🛡️ Admin Dashboard'
+                : selected?.type === 1
+                  ? '💬 #general'
+                  : selected
+                    ? '💬 @' + conversationName(selected)
+                    : '👥 People'}
+            </strong>
+            {view === 'admin' && <span className="h-admin-badge">Admin Mode</span>}
+          </div>
+          <button onClick={logOut}>Log Out</button>
+        </header>
         {error && <div className="h-alert h-error" role="alert">{error}</div>}
         {notice && <div className="h-alert h-notice" role="status">{notice}</div>}
         {view === 'admin' && account?.status === 2 ? (
           <AdminPanel />
         ) : selected ? (
           <>
-            <header className="h-header">
-              <div>
-                <strong>{selected.type === 1 ? '# ' : '@ '}{conversationName(selected)}</strong>
-                <span>{selected.members.length} members</span>
-              </div>
-            </header>
             <div className="h-messages">
               {messagesLoading && <p className="h-muted">Loading messages…</p>}
               {!messagesLoading && messages.length === 0 && (
@@ -340,21 +408,36 @@ export default function Dashboard() {
             </form>
           </>
         ) : (
-          <div className="h-empty">
-            <h1>Welcome to Harmony</h1>
-            <p>Select a conversation or create a group to get started.</p>
+          <div className="h-people">
+            <h3>People — {eligibleUsers.length}</h3>
+            {eligibleUsers.map((user) => (
+              <div className="h-person" key={user._id}>
+                <span className="h-small-avatar">{user.username[0].toUpperCase()}</span>
+                <strong>@{user.username}</strong>
+                <button onClick={() => { setDmUserId(user._id); void startDirectMessageFor(user._id); }}>
+                  💬 Message
+                </button>
+              </div>
+            ))}
+            {eligibleUsers.length === 0 && <p className="h-muted">No other users are available yet.</p>}
           </div>
         )}
       </main>
 
-      {view === 'chat' && selected && (
-        <aside className="h-members">
-          <h3>Members</h3>
-          {selected.members.filter((member) => member !== null).map((member) => (
-            <div key={member._id}>@{member.username}</div>
-          ))}
-        </aside>
-      )}
+      <aside className={'h-members' + (rightSidebarExpanded ? '' : ' h-collapsed')}>
+        <div className="h-members-heading">
+          {rightSidebarExpanded && <h3>{selected?.type === 1 ? 'Members' : 'People'}</h3>}
+          <button onClick={() => setRightSidebarExpanded(!rightSidebarExpanded)}>
+            {rightSidebarExpanded ? '►' : '◄'}
+          </button>
+        </div>
+        {(selected?.members.filter((member) => member !== null) ?? eligibleUsers).map((member) => (
+          <div className="h-member" key={member._id} title={member.username}>
+            <span className="h-small-avatar">{member.username[0].toUpperCase()}</span>
+            {rightSidebarExpanded && <span>@{member.username}</span>}
+          </div>
+        ))}
+      </aside>
 
       {showGroupForm && (
         <div className="h-overlay" role="dialog" aria-modal="true" aria-label="Create group">
