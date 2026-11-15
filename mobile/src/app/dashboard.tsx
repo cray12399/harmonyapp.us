@@ -109,9 +109,9 @@ export default function DashboardScreen() {
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editRole, setEditRole] = useState<'System Admin' | 'Member'>('Member');
-  const [showPasswordResetSection, setShowPasswordResetSection] = useState(false);
   const [adminNewPassword, setAdminNewPassword] = useState('');
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
 
   const [revealEmail, setRevealEmail] = useState(false);
   const [revealPhone, setRevealPhone] = useState(false);
@@ -282,9 +282,9 @@ export default function DashboardScreen() {
     setEditEmail(user.email);
     setEditPhone(user.phone);
     setEditRole(user.role);
-    setShowPasswordResetSection(false);
     setAdminNewPassword('');
     setAdminConfirmPassword('');
+    setShowPasswordResetModal(false);
   };
 
   const handleSaveEditedUser = () => {
@@ -465,7 +465,7 @@ export default function DashboardScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* TAB 1: USER MANAGEMENT (With Mobile Layout: ID Top, Status Top-Right, Name Below ID) */}
+            {/* TAB 1: USER MANAGEMENT */}
             {adminTab === 'users' && (
               <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 80 }}>
                 <View style={styles.adminSearchBox}>
@@ -480,7 +480,6 @@ export default function DashboardScreen() {
 
                 {filteredAdminUsers.map((u) => (
                   <View key={u.id} style={styles.adminUserCard}>
-                    {/* Top Row: ID on left, Active/Disabled status pill on top right */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <Text style={{ color: '#949ba4', fontWeight: 'bold', fontSize: 12 }}>ID: {u.id}</Text>
                       <View style={[styles.statusPill, { backgroundColor: u.status === 'Active' ? '#23a55a' : '#f23f43' }]}>
@@ -488,12 +487,10 @@ export default function DashboardScreen() {
                       </View>
                     </View>
 
-                    {/* Below ID: Full Name & Admin Badge */}
                     <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>
                       {u.name} {u.role === 'System Admin' && <Text style={styles.adminBadge}>ADMIN</Text>}
                     </Text>
 
-                    {/* Remaining User Information */}
                     <Text style={{ color: '#00a8fc', fontSize: 13 }}>{u.username} • {u.email}</Text>
                     <Text style={{ color: '#949ba4', fontSize: 12, marginTop: 2 }}>Phone: {u.phone} | Role: {u.role}</Text>
 
@@ -570,7 +567,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* --- EXPLICIT GLOBAL MODAL RENDER FOR REPORT DETAILS --- */}
+        {/* --- REPORT DETAILS MODAL --- */}
         <Modal visible={!!selectedReport} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             {selectedReport && (
@@ -636,11 +633,11 @@ export default function DashboardScreen() {
           </View>
         </Modal>
 
-        {/* --- EDIT USER ADMIN MODAL (Matches Screenshots 34 & 35) --- */}
+        {/* --- EDIT USER ADMIN MODAL --- */}
         <Modal visible={!!editingUser} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             {editingUser && (
-              <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 }}>
+              <ScrollView contentContainerStyle={{ justifyContent: 'center', alignItems: 'center', paddingVertical: 20, paddingHorizontal: 20 }}>
                 <View style={styles.editUserModalBox}>
                   <Text style={{ color: '#f2f3f5', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>
                     Edit User (ID: {editingUser.id})
@@ -705,59 +702,19 @@ export default function DashboardScreen() {
                     </Text>
                   </TouchableOpacity>
 
-                  {/* Password Controls Section */}
+                  {/* Password Controls Card with Reset Password Button */}
                   <View style={styles.passwordControlsCard}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                       <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 14 }}>Password Controls</Text>
                       <TouchableOpacity
-                        onPress={() => setShowPasswordResetSection(!showPasswordResetSection)}
+                        onPress={() => setShowPasswordResetModal(true)}
                         style={styles.hideResetBtn}
                       >
-                        <Text style={{ color: '#ffcc00', fontSize: 12, fontWeight: 'bold' }}>
-                          {showPasswordResetSection ? 'Hide Reset' : 'Reset Password'}
+                        <Text style={{ color: '#ffcc00', fontSize: 11, fontWeight: 'bold' }}>
+                          Reset Password
                         </Text>
                       </TouchableOpacity>
                     </View>
-
-                    {showPasswordResetSection && (
-                      <>
-                        <Text style={styles.settingsFieldLabel}>NEW PASSWORD</Text>
-                        <TextInput
-                          style={styles.modalInput}
-                          secureTextEntry
-                          placeholder="New password"
-                          placeholderTextColor="#72767d"
-                          value={adminNewPassword}
-                          onChangeText={setAdminNewPassword}
-                        />
-
-                        <Text style={styles.settingsFieldLabel}>CONFIRM NEW PASSWORD</Text>
-                        <TextInput
-                          style={styles.modalInput}
-                          secureTextEntry
-                          placeholder="Confirm new password"
-                          placeholderTextColor="#72767d"
-                          value={adminConfirmPassword}
-                          onChangeText={setAdminConfirmPassword}
-                        />
-
-                        <TouchableOpacity
-                          onPress={() => {
-                            if (!adminNewPassword || adminNewPassword !== adminConfirmPassword) {
-                              alert('Passwords do not match or are empty.');
-                              return;
-                            }
-                            alert('Password reset successfully!');
-                            setAdminNewPassword('');
-                            setAdminConfirmPassword('');
-                            setShowPasswordResetSection(false);
-                          }}
-                          style={styles.confirmPasswordResetBtn}
-                        >
-                          <Text style={{ color: '#111', fontWeight: 'bold', fontSize: 14 }}>Confirm Password Reset</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
                   </View>
 
                   <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginTop: 18 }}>
@@ -771,6 +728,64 @@ export default function DashboardScreen() {
                 </View>
               </ScrollView>
             )}
+          </View>
+        </Modal>
+
+        {/* --- PASSWORD RESET SUB-MODAL --- */}
+        <Modal visible={showPasswordResetModal} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={{ color: '#f2f3f5', fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>
+                Reset Password (ID: {editingUser?.id})
+              </Text>
+
+              <Text style={styles.settingsFieldLabel}>NEW PASSWORD</Text>
+              <TextInput
+                style={styles.modalInput}
+                secureTextEntry
+                placeholder="New password"
+                placeholderTextColor="#72767d"
+                value={adminNewPassword}
+                onChangeText={setAdminNewPassword}
+              />
+
+              <Text style={styles.settingsFieldLabel}>CONFIRM NEW PASSWORD</Text>
+              <TextInput
+                style={styles.modalInput}
+                secureTextEntry
+                placeholder="Confirm new password"
+                placeholderTextColor="#72767d"
+                value={adminConfirmPassword}
+                onChangeText={setAdminConfirmPassword}
+              />
+
+              <TouchableOpacity
+                onPress={() => {
+                  if (!adminNewPassword || adminNewPassword !== adminConfirmPassword) {
+                    alert('Passwords do not match or are empty.');
+                    return;
+                  }
+                  alert('Password reset successfully!');
+                  setAdminNewPassword('');
+                  setAdminConfirmPassword('');
+                  setShowPasswordResetModal(false);
+                }}
+                style={styles.confirmPasswordResetBtn}
+              >
+                <Text style={{ color: '#111', fontWeight: 'bold', fontSize: 14 }}>Confirm Password Reset</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowPasswordResetModal(false);
+                  setAdminNewPassword('');
+                  setAdminConfirmPassword('');
+                }}
+                style={{ marginTop: 14, alignItems: 'center' }}
+              >
+                <Text style={{ color: '#b5bac1', fontSize: 14, fontWeight: '600' }}>Hide Reset / Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </Modal>
       </SafeAreaView>
@@ -1042,7 +1057,7 @@ export default function DashboardScreen() {
               secureTextEntry
               placeholderTextColor="#72767d"
               value={newPasswordInput}
-              onChangeText={setNewPasswordInput}
+              onChangeText={newPasswordInput}
             />
 
             <Text style={styles.settingsFieldLabel}>CONFIRM NEW PASSWORD</Text>
@@ -1212,7 +1227,7 @@ const styles = StyleSheet.create({
   reportContentBox: { backgroundColor: '#1e1f22', padding: 12, borderRadius: 6, borderWidth: 1, borderColor: '#f23f43' },
   keepMessageBtn: { backgroundColor: '#23a55a', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
   getRidMessageBtn: { backgroundColor: '#f23f43', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6 },
-  editUserModalBox: { backgroundColor: '#313338', borderRadius: 12, padding: 22, width: '90%', maxWidth: 420, alignSelf: 'center' },
+  editUserModalBox: { backgroundColor: '#313338', borderRadius: 12, padding: 20, width: '100%', maxWidth: 420, alignSelf: 'center' },
   passwordControlsCard: { backgroundColor: '#1e1f22', borderRadius: 8, padding: 12, marginTop: 14, borderWidth: 1, borderColor: '#35363c' },
   hideResetBtn: { backgroundColor: '#383a40', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
   confirmPasswordResetBtn: { backgroundColor: '#f0b232', padding: 10, borderRadius: 6, alignItems: 'center', marginTop: 12 },
