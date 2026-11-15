@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const RevokedToken = require("../models/RevokedToken");
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !/^Bearer \S+$/i.test(authHeader)) {
@@ -22,9 +24,26 @@ const authMiddleware = (req, res, next) => {
       });
     }
 
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const revokedToken = await RevokedToken.findOne({ tokenHash });
+
+    if (revokedToken) {
+      return res.status(401).json({
+        error: "Invalid or expired token",
+      });
+    }
+
     req.user = {
       userId: decoded.userId,
     };
+
+    req.token = token;
+    req.tokenHash = tokenHash;
+    req.tokenExpiresAt = new Date(decoded.exp * 1000);
 
     next();
   } catch (error) {
