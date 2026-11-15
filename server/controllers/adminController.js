@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Message = require("../models/Message");
 const MessageReport = require("../models/MessageReport");
+const { REMOVED_MESSAGE_TEXT } = require("../constants/message");
 
 const ADMIN_STATUS = 2;
 const ALLOWED_STATUSES = new Set([0, 1, 2]);
@@ -132,7 +133,7 @@ const resolveReport = async (req, res) => {
         // Clear the original text as well as marking the message removed.
         const update = await Message.updateOne(
           { _id: report.message },
-          { $set: { isRemoved: true, content: "" } },
+          { $set: { isRemoved: true, content: REMOVED_MESSAGE_TEXT } },
           { session }
         );
         if (!update.matchedCount) {
@@ -169,7 +170,7 @@ const removeMessage = async (req, res) => {
     const result = await mongoose.connection.transaction(async (session) => {
       const message = await Message.findOneAndUpdate(
         { _id: id, isRemoved: { $ne: true } },
-        { $set: { isRemoved: true, content: "" } },
+        { $set: { isRemoved: true, content: REMOVED_MESSAGE_TEXT } },
         { new: true, session }
       );
       if (!message) return false;

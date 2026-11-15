@@ -3,12 +3,12 @@ const User = require("../models/User");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const MessageReport = require("../models/MessageReport");
+const { REMOVED_MESSAGE_TEXT } = require("../constants/message");
 
 const CONVERSATION_FIELDS =
   "_id type name members createdBy lastMessageAt createdAt";
 const MESSAGE_FIELDS =
   "_id conversation sender content isRemoved createdAt";
-const REMOVED_TEXT = "Message removed by an admin";
 
 // Choose response fields explicitly. A removed message never exposes
 // its original content through this API.
@@ -17,7 +17,7 @@ const messageForClient = (message) => ({
   conversation: message.conversation,
   sender: message.sender?._id ?? message.sender,
   senderUsername: message.sender?.username ?? null,
-  content: message.isRemoved ? REMOVED_TEXT : message.content,
+  content: message.isRemoved ? REMOVED_MESSAGE_TEXT : message.content,
   isRemoved: message.isRemoved,
   createdAt: message.createdAt,
 });
