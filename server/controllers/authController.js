@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("node:crypto");
+const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const {
   sendVerificationEmail,
@@ -24,25 +25,29 @@ const register = async (req, res) => {
   });
 
   try {
-    const { username, email, password } = req.body;
+    const { username, nickname, email, password } = req.body;
 
     if (
       typeof username !== "string" ||
+      typeof nickname !== "string" ||
       typeof email !== "string" ||
       typeof password !== "string" ||
       username.trim().length < 3 ||
       username.trim().length > 20 ||
+      nickname.trim().length < 1 ||
+      nickname.trim().length > 32 ||
       !email.trim() ||
       password.length < 8
     ) {
       console.warn("[AUTH CONTROLLER] Validation failed on incoming registration fields.");
       return res.status(400).json({
-        error: "Provide a username (3-20 characters), email, and password (at least 8 characters)",
+        error: "Provide a username (3-20 characters), nickname (1-32 characters), email, and password (at least 8 characters)",
       });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedUsername = username.trim();
+    const normalizedNickname = nickname.trim();
     console.log(`[AUTH CONTROLLER] Checking for existing user: username='${normalizedUsername}', email='${normalizedEmail}'`);
 
     const existingUser = await User.findOne({
@@ -65,6 +70,7 @@ const register = async (req, res) => {
 
     const user = await User.create({
       username: normalizedUsername,
+      nickname: normalizedNickname,
       email: normalizedEmail,
       passwordHash,
       isVerified: false,
@@ -98,6 +104,7 @@ const register = async (req, res) => {
       user: {
         _id: user._id,
         username: user.username,
+        nickname: user.nickname,
         email: user.email,
         isVerified: user.isVerified,
         status: user.status,
@@ -174,11 +181,22 @@ const login = async (req, res) => {
       return res.status(403).json({ error: "Please verify your email before logging in" });
     }
 
+    const token = jwt.sign(
+      { userId: user._id.toString() },
+      process.env.JWT_SECRET,
+      {
+        algorithm: "HS256",
+        expiresIn: "1h",
+      }
+    );
+
     return res.status(200).json({
       message: "Login successful",
+      token,
       user: {
         _id: user._id,
         username: user.username,
+        nickname: user.nickname,
         email: user.email,
         isVerified: user.isVerified,
         status: user.status,

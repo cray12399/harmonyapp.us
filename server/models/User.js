@@ -8,6 +8,17 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
 
+  nickname: {
+    type: String,
+    required: true,
+    default: function () {
+      return this.username;
+    },
+    trim: true,
+    minlength: 1,
+    maxlength: 32,
+  },
+
   email: {
     type: String,
     required: true,
