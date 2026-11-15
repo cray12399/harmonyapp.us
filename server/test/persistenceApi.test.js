@@ -6,6 +6,7 @@ const User = require("../models/User");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const MessageReport = require("../models/MessageReport");
+const { REMOVED_MESSAGE_TEXT } = require("../constants/message");
 const app = require("../server");
 
 const adminId = new mongoose.Types.ObjectId();
@@ -83,13 +84,13 @@ before(async () => {
   replace(Message, "updateOne", async () => {
     if (!message) return { matchedCount: 0 };
     message.isRemoved = true;
-    message.content = "";
+    message.content = REMOVED_MESSAGE_TEXT;
     return { matchedCount: 1 };
   });
   replace(Message, "findOneAndUpdate", async () => {
     if (!message || message.isRemoved) return null;
     message.isRemoved = true;
-    message.content = "";
+    message.content = REMOVED_MESSAGE_TEXT;
     return message;
   });
 
@@ -214,7 +215,7 @@ test("admin report removal clears saved message content", async () => {
   });
   assert.equal(result.status, 200);
   assert.equal(report.status, "deleted");
-  assert.equal(message.content, "");
+  assert.equal(message.content, REMOVED_MESSAGE_TEXT);
   const listed = await request(`/api/conversations/${conversationId}/messages`);
   assert.equal(listed.body.messages[0].isRemoved, true);
   assert.equal(listed.body.messages[0].content, "Message removed by an admin");
@@ -229,6 +230,6 @@ test("direct message removal is admin-only", async () => {
     method: "DELETE",
   })).status, 403);
   assert.equal((await request(path, { method: "DELETE" })).status, 200);
-  assert.equal(message.content, "");
+  assert.equal(message.content, REMOVED_MESSAGE_TEXT);
   assert.equal(message.isRemoved, true);
 });
