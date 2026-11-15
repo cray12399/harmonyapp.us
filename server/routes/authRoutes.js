@@ -22,6 +22,11 @@ router.get("/me", authMiddleware, (req, res) => {
   return res.status(200).json({
     message: "Authenticated successfully",
     userId: req.user.userId,
+    user: {
+      _id: req.user.userId,
+      username: req.user.username,
+      status: req.user.status,
+    },
   });
 });
 

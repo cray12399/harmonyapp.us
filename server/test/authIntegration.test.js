@@ -14,8 +14,8 @@ const otherId1 = new mongoose.Types.ObjectId();
 const otherId2 = new mongoose.Types.ObjectId();
 const conversationId = new mongoose.Types.ObjectId();
 const users = new Map([
-  [String(adminId), { _id: adminId, status: 2, isVerified: true }],
-  [String(memberId), { _id: memberId, status: 1, isVerified: true }],
+  [String(adminId), { _id: adminId, username: "admin", status: 2, isVerified: true }],
+  [String(memberId), { _id: memberId, username: "member", status: 1, isVerified: true }],
 ]);
 const secretBeforeTests = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "local-test-secret-that-is-not-used-for-deployment";
@@ -90,7 +90,7 @@ before(async () => {
     canAccessConversation ? { _id: conversationId } : null
   );
   replace(Conversation, "updateOne", async () => ({ modifiedCount: 1 }));
-  replace(Message, "find", () => query([], ["select", "sort"]));
+  replace(Message, "find", () => query([], ["select", "sort", "populate"]));
   replace(Message, "create", async (data) => {
     lastMessage = data;
     return {
@@ -161,6 +161,7 @@ test("a regular user can use /me and conversations but not admin routes", async 
   const me = await request("/api/auth/me", { token: memberToken });
   assert.equal(me.status, 200);
   assert.equal(me.body.userId, String(memberId));
+  assert.equal(me.body.user.username, "member");
   assert.equal(
     (await request("/api/conversations", { token: memberToken })).status,
     200

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
+const MessageReport = require("../models/MessageReport");
 
 const CONVERSATION_FIELDS =
   "_id type name members createdBy lastMessageAt createdAt";
@@ -14,11 +15,30 @@ const REMOVED_TEXT = "Message removed by an admin";
 const messageForClient = (message) => ({
   _id: message._id,
   conversation: message.conversation,
-  sender: message.sender,
+  sender: message.sender?._id ?? message.sender,
+  senderUsername: message.sender?.username ?? null,
   content: message.isRemoved ? REMOVED_TEXT : message.content,
   isRemoved: message.isRemoved,
   createdAt: message.createdAt,
 });
+
+const listEligibleUsers = async (req, res) => {
+  try {
+    const users = await User.find({
+      _id: { $ne: req.user._id },
+      status: { $in: [1, 2] },
+      isVerified: true,
+    })
+      .select("_id username")
+      .sort({ username: 1 })
+      .lean();
+
+    return res.status(200).json({ users });
+  } catch (error) {
+    console.error("Could not list eligible users:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
 
 const listConversations = async (req, res) => {
   if (!req.user?._id) {
@@ -41,7 +61,7 @@ const listConversations = async (req, res) => {
   }
 };
 
-const createGroup = async (req, res) => {
+const createConversation = async (req, res) => {
   if (!req.user?._id) {
     return res.status(401).json({ error: "Authentication required" });
   }
@@ -49,36 +69,40 @@ const createGroup = async (req, res) => {
   const { type, name, memberIds } = req.body ?? {};
 
   // This handler creates groups. A DM creation handler can later share
-  // POST /api/conversations.
-  if (type !== 1) {
-    return res.status(400).json({ error: "Group type must be 1" });
+  if (type !== 0 && type !== 1) {
+    return res.status(400).json({ error: "Conversation type must be 0 or 1" });
   }
 
-  if (
+  if (type === 1 && (
     typeof name !== "string" ||
     name.trim().length === 0 ||
     name.trim().length > 80
-  ) {
+  )) {
     return res.status(400).json({
       error: "Group name must be 1–80 characters",
     });
   }
 
-  // The server adds the caller, so 2–9 other IDs means 3–10 total members.
+  // A DM has one other member; a group has two to nine other members.
   if (
     !Array.isArray(memberIds) ||
-    memberIds.length < 2 ||
-    memberIds.length > 9 ||
+    (type === 0 && memberIds.length !== 1) ||
+    (type === 1 && (memberIds.length < 2 || memberIds.length > 9)) ||
     memberIds.some(
       (id) => typeof id !== "string" || !mongoose.isValidObjectId(id)
     )
   ) {
     return res.status(400).json({
-      error: "Provide 2–9 valid other member IDs",
+      error: type === 0
+        ? "Provide one valid other member ID"
+        : "Provide 2–9 valid other member IDs",
     });
   }
 
   const otherIds = memberIds.map((id) => id.toLowerCase());
+  const dmKey = type === 0
+    ? [String(req.user._id), otherIds[0]].sort().join(":")
+    : undefined;
 
   if (
     otherIds.includes(String(req.user._id)) ||
@@ -103,14 +127,30 @@ const createGroup = async (req, res) => {
       });
     }
 
+    // Reopening a DM returns the existing conversation and its history.
+    if (type === 0) {
+      const existing = await Conversation.findOne({
+        type: 0,
+        members: { $all: [req.user._id, otherIds[0]], $size: 2 },
+      })
+        .select(CONVERSATION_FIELDS)
+        .populate("members", "_id username")
+        .lean();
+
+      if (existing) {
+        return res.status(200).json({ conversation: existing });
+      }
+    }
+
     const created = await Conversation.create({
-      type: 1,
-      name: name.trim(),
+      type,
+      name: type === 1 ? name.trim() : null,
+      dmKey,
       members: [req.user._id, ...otherIds],
       createdBy: req.user._id,
     });
 
-    // Include member usernames in the response for the group UI.
+    // Include member usernames so the UI can show the conversation immediately.
     const conversation = await Conversation.findById(created._id)
       .select(CONVERSATION_FIELDS)
       .populate("members", "_id username")
@@ -118,7 +158,14 @@ const createGroup = async (req, res) => {
 
     return res.status(201).json({ conversation });
   } catch (error) {
-    console.error("Could not create group:", error);
+    if (type === 0 && error.code === 11000) {
+      const existing = await Conversation.findOne({ dmKey })
+        .select(CONVERSATION_FIELDS)
+        .populate("members", "_id username")
+        .lean();
+      if (existing) return res.status(200).json({ conversation: existing });
+    }
+    console.error("Could not create conversation:", error);
     return res.status(500).json({ error: "Server error" });
   }
 };
@@ -161,6 +208,7 @@ const listMessages = async (req, res) => {
     const messages = await Message.find(filter)
       .select(MESSAGE_FIELDS)
       .sort({ createdAt: 1, _id: 1 })
+      .populate("sender", "_id username")
       .lean();
 
     return res.status(200).json({
@@ -224,7 +272,10 @@ const sendMessage = async (req, res) => {
     }
 
     return res.status(201).json({
-      message: messageForClient(message),
+      message: {
+        ...messageForClient(message),
+        senderUsername: req.user.username,
+      },
     });
   } catch (error) {
     console.error("Could not send message:", error);
@@ -232,9 +283,56 @@ const sendMessage = async (req, res) => {
   }
 };
 
+const reportMessage = async (req, res) => {
+  const { id, messageId } = req.params;
+  const reason = req.body?.reason;
+
+  if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(messageId)) {
+    return res.status(400).json({ error: "Invalid conversation or message ID" });
+  }
+
+  if (typeof reason !== "string" || !reason.trim() || reason.trim().length > 500) {
+    return res.status(400).json({ error: "Reason must be 1–500 characters" });
+  }
+
+  try {
+    const membership = await Conversation.exists({
+      _id: id,
+      members: req.user._id,
+    });
+    if (!membership) {
+      return res.status(404).json({ error: "Conversation not found" });
+    }
+
+    const message = await Message.findOne({
+      _id: messageId,
+      conversation: id,
+      isRemoved: { $ne: true },
+    }).select("_id").lean();
+    if (!message) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    const report = await MessageReport.create({
+      message: messageId,
+      reportedBy: req.user._id,
+      reason: reason.trim(),
+    });
+    return res.status(201).json({ reportId: report._id });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ error: "You already reported this message" });
+    }
+    console.error("Could not report message:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
 module.exports = {
+  listEligibleUsers,
   listConversations,
-  createGroup,
+  createConversation,
   listMessages,
   sendMessage,
+  reportMessage,
 };

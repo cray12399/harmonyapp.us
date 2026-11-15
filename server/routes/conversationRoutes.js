@@ -1,9 +1,11 @@
 const express = require("express");
 const {
   listConversations,
-  createGroup,
+  listEligibleUsers,
+  createConversation,
   listMessages,
   sendMessage,
+  reportMessage,
 } = require("../controllers/conversationController");
 
 const createConversationRouter = ({ requireAuth }) => {
@@ -19,9 +21,11 @@ const createConversationRouter = ({ requireAuth }) => {
   router.use(requireAuth);
 
   router.get("/", listConversations);
-  router.post("/", createGroup);
+  router.get("/eligible-users", listEligibleUsers);
+  router.post("/", createConversation);
   router.get("/:id/messages", listMessages);
   router.post("/:id/messages", sendMessage);
+  router.post("/:id/messages/:messageId/reports", reportMessage);
 
   return router;
 };
