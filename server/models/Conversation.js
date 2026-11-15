@@ -11,6 +11,8 @@ const conversationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // Stable pair key prevents two simultaneous requests creating duplicate DMs.
+    dmKey: { type: String },
     lastMessageAt: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
   },
@@ -18,5 +20,6 @@ const conversationSchema = new mongoose.Schema(
 );
 
 conversationSchema.index({ members: 1 });
+conversationSchema.index({ dmKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Conversation", conversationSchema);

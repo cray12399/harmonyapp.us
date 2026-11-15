@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
+const Message = require("../models/Message");
+const MessageReport = require("../models/MessageReport");
 
 const ADMIN_STATUS = 2;
 const ALLOWED_STATUSES = new Set([0, 1, 2]);
@@ -86,4 +88,119 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
-module.exports = { listUsers, updateUserStatus };
+const listReports = async (_req, res) => {
+  try {
+    const reports = await MessageReport.find({})
+      .sort({ createdAt: -1 })
+      .populate("reportedBy", "_id username")
+      .populate({
+        path: "message",
+        select: "_id content isRemoved createdAt sender conversation",
+        populate: [
+          { path: "sender", select: "_id username" },
+          { path: "conversation", select: "_id name type" },
+        ],
+      })
+      .lean();
+
+    return res.status(200).json({ reports });
+  } catch (error) {
+    console.error("Could not list message reports:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+const resolveReport = async (req, res) => {
+  const { id } = req.params;
+  const { decision } = req.body ?? {};
+  if (!mongoose.isValidObjectId(id)) {
+    return res.status(400).json({ error: "Invalid report ID" });
+  }
+  if (decision !== "kept" && decision !== "deleted") {
+    return res.status(400).json({ error: "Decision must be kept or deleted" });
+  }
+
+  try {
+    const result = await mongoose.connection.transaction(async (session) => {
+      const report = await MessageReport.findById(id).session(session);
+      if (!report) return { status: 404, error: "Report not found" };
+      if (report.status !== "pending") {
+        return { status: 409, error: "Report was already reviewed" };
+      }
+
+      if (decision === "deleted") {
+        // Clear the original text as well as marking the message removed.
+        const update = await Message.updateOne(
+          { _id: report.message },
+          { $set: { isRemoved: true, content: "" } },
+          { session }
+        );
+        if (!update.matchedCount) {
+          return { status: 404, error: "Reported message not found" };
+        }
+      }
+
+      report.status = decision;
+      report.reviewedBy = req.user._id;
+      report.reviewedAt = new Date();
+      await report.save({ session });
+      return { status: 200, reportId: report._id, decision };
+    });
+
+    return res.status(result.status).json(
+      result.error ? { error: result.error } : {
+        reportId: result.reportId,
+        status: result.decision,
+      }
+    );
+  } catch (error) {
+    console.error("Could not resolve report:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+const removeMessage = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.isValidObjectId(id)) {
+    return res.status(400).json({ error: "Invalid message ID" });
+  }
+
+  try {
+    const result = await mongoose.connection.transaction(async (session) => {
+      const message = await Message.findOneAndUpdate(
+        { _id: id, isRemoved: { $ne: true } },
+        { $set: { isRemoved: true, content: "" } },
+        { new: true, session }
+      );
+      if (!message) return false;
+
+      // Reports of a directly removed message should leave the pending queue.
+      await MessageReport.updateMany(
+        { message: id, status: "pending" },
+        {
+          $set: {
+            status: "deleted",
+            reviewedBy: req.user._id,
+            reviewedAt: new Date(),
+          },
+        },
+        { session }
+      );
+      return true;
+    });
+
+    if (!result) return res.status(404).json({ error: "Message not found" });
+    return res.status(200).json({ messageId: id, isRemoved: true });
+  } catch (error) {
+    console.error("Could not remove message:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+module.exports = {
+  listUsers,
+  updateUserStatus,
+  listReports,
+  resolveReport,
+  removeMessage,
+};

@@ -45,7 +45,7 @@ const requireAuth = async (req, res, next) => {
     // Fetch the current account so a role change or disable takes effect
     // immediately, even when the caller still has an unexpired token.
     const user = await User.findById(decoded.userId)
-      .select("_id status isVerified")
+      .select("_id username status isVerified")
       .lean();
 
     if (!user) {
@@ -64,6 +64,7 @@ const requireAuth = async (req, res, next) => {
     req.user = {
       _id: user._id,
       userId: String(user._id),
+      username: user.username,
       status: user.status,
     };
 
