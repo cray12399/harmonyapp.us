@@ -1,4 +1,5 @@
 const express = require("express");
+const { createDM } = require("../controllers/dmController");
 const {
   listConversations,
   createGroup,
@@ -20,6 +21,7 @@ const createConversationRouter = ({ requireAuth }) => {
 
   router.get("/", listConversations);
   router.post("/", createGroup);
+  router.post("/dm", createDM);
   router.get("/:id/messages", listMessages);
   router.post("/:id/messages", sendMessage);
 

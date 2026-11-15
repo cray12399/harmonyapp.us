@@ -39,6 +39,7 @@ const authMiddleware = async (req, res, next) => {
 
     req.user = {
       userId: decoded.userId,
+      _id: decoded.userId,
     };
 
     req.token = token;
