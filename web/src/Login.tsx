@@ -6,6 +6,15 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // Forgot Password Modal State
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [resetStep, setResetStep] = useState(1); // 1 = Request Code, 2 = Enter Code & New Password
+  const [forgotMessage, setForgotMessage] = useState('');
+
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -22,28 +31,61 @@ export default function Login() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Login failed');
 
+      // Save user object and token (if returned) to localStorage
+      localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      }
+
       setMessage('Success! Welcome to Harmony.');
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 800);
+      setTimeout(() => navigate('/dashboard'), 800);
     } catch (err: any) {
       setMessage(`Error: ${err.message}`);
     }
   };
 
-  // Reusable Eye Icon component for clean toggling
+  const handleRequestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotMessage('Sending reset code...');
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setForgotMessage('If account exists, reset code sent.');
+      setResetStep(2);
+    } catch (err: any) {
+      setForgotMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const handleConfirmReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotMessage('Resetting password...');
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail, code: resetCode, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setForgotMessage('Password reset successful! You can now log in.');
+      setTimeout(() => {
+        setShowForgotModal(false);
+        setResetStep(1);
+        setForgotMessage('');
+      }, 1500);
+    } catch (err: any) {
+      setForgotMessage(`Error: ${err.message}`);
+    }
+  };
+
   const renderEyeIcon = (isOpen: boolean) => (
-    <svg 
-      width="20" 
-      height="20" 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-      style={{ display: 'block' }}
-    >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
       {isOpen ? (
         <>
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -59,36 +101,18 @@ export default function Login() {
   );
 
   return (
-    <div style={{
-      position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
-      display: 'flex', justifyContent: 'center', alignItems: 'center',
-      fontFamily: '"gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif',
-      background: 'linear-gradient(135deg, #202225 0%, #36393f 40%, #5865F2 100%)',
-      margin: 0, padding: 0, overflow: 'hidden', boxSizing: 'border-box'
-    }}>
-      <div style={{
-        backgroundColor: '#313338', padding: '36px 32px', borderRadius: '8px',
-        width: '480px', maxWidth: '90vw', boxShadow: '0 12px 24px rgba(0, 0, 0, 0.4)',
-        boxSizing: 'border-box'
-      }}>
+    <div style={{ position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'sans-serif', background: 'linear-gradient(135deg, #202225 0%, #36393f 40%, #5865F2 100%)', margin: 0, padding: 0, overflow: 'hidden' }}>
+      <div style={{ backgroundColor: '#313338', padding: '36px 32px', borderRadius: '8px', width: '480px', maxWidth: '90vw', boxShadow: '0 12px 24px rgba(0, 0, 0, 0.4)', boxSizing: 'border-box' }}>
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <div style={{
-            width: '54px', height: '54px', backgroundColor: '#5865F2', borderRadius: '16px',
-            margin: '0 auto 16px auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'white', fontWeight: '700', fontSize: '26px'
-          }}>
+          <div style={{ width: '54px', height: '54px', backgroundColor: '#5865F2', borderRadius: '16px', margin: '0 auto 16px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: '700', fontSize: '26px' }}>
             H
           </div>
-          <h2 style={{ color: '#f2f3f5', marginBottom: '8px', fontSize: '24px', fontWeight: '600' }}>
-            Welcome back!
-          </h2>
-          <p style={{ color: '#949ba4', fontSize: '14px' }}>
-            We're so excited to see you again!
-          </p>
+          <h2 style={{ color: '#f2f3f5', marginBottom: '8px', fontSize: '24px', fontWeight: '600' }}>Welcome back!</h2>
+          <p style={{ color: '#949ba4', fontSize: '14px' }}>We're so excited to see you again!</p>
         </div>
 
         <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '20px' }}>
+          <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#b5bac1', textTransform: 'uppercase' }}>
               Username or Email <span style={{ color: '#f23f43' }}>*</span>
             </label>
@@ -101,7 +125,7 @@ export default function Login() {
             />
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
+          <div style={{ marginBottom: '8px' }}>
             <label style={{ display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#b5bac1', textTransform: 'uppercase' }}>
               Password <span style={{ color: '#f23f43' }}>*</span>
             </label>
@@ -113,20 +137,17 @@ export default function Login() {
                 style={{ width: '100%', padding: '10px 40px 10px 12px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '3px', color: '#f2f3f5', fontSize: '16px', boxSizing: 'border-box', outline: 'none' }}
                 required
               />
-              <span
-                onClick={() => setShowPassword(!showPassword)}
-                style={{ position: 'absolute', right: '12px', top: '10px', cursor: 'pointer', color: '#b5bac1' }}
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
+              <span onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '12px', top: '10px', cursor: 'pointer', color: '#b5bac1' }}>
                 {renderEyeIcon(showPassword)}
               </span>
             </div>
           </div>
 
-          <button
-            type="submit"
-            style={{ width: '100%', padding: '12px', backgroundColor: '#5865F2', color: 'white', border: 'none', borderRadius: '3px', fontSize: '16px', fontWeight: '500', cursor: 'pointer' }}
-          >
+          <div style={{ textAlign: 'right', marginBottom: '20px' }}>
+            <span onClick={() => setShowForgotModal(true)} style={{ color: '#00a8fc', fontSize: '13px', cursor: 'pointer' }}>Forgot your password?</span>
+          </div>
+
+          <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#5865F2', color: 'white', border: 'none', borderRadius: '3px', fontSize: '16px', fontWeight: '500', cursor: 'pointer' }}>
             Log In
           </button>
         </form>
@@ -137,10 +158,40 @@ export default function Login() {
           </p>
         )}
 
-        <div style={{ marginTop: '20px', fontSize: '14px', color: '#949ba4' }}>
+        <div style={{ marginTop: '20px', fontSize: '14px', color: '#949ba4', textAlign: 'center' }}>
           Need an account? <span style={{ color: '#00a8fc', cursor: 'pointer' }} onClick={() => navigate('/register')}>Register</span>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 120 }}>
+          <div style={{ backgroundColor: '#313338', padding: '32px', borderRadius: '8px', width: '420px', boxShadow: '0 12px 32px rgba(0,0,0,0.6)' }}>
+            <h3 style={{ color: '#f2f3f5', marginBottom: '12px' }}>Reset Password</h3>
+            {resetStep === 1 ? (
+              <form onSubmit={handleRequestReset}>
+                <p style={{ color: '#949ba4', fontSize: '13px', marginBottom: '16px' }}>Enter your account email to receive a 6-digit reset code.</p>
+                <input type="email" placeholder="Email address" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '16px', outline: 'none' }} required />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" onClick={() => setShowForgotModal(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>Cancel</button>
+                  <button type="submit" style={{ backgroundColor: '#5865F2', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Send Code</button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleConfirmReset}>
+                <p style={{ color: '#949ba4', fontSize: '13px', marginBottom: '16px' }}>Enter the 6-digit code and your new password (min 8 chars).</p>
+                <input type="text" maxLength={6} placeholder="6-digit code" value={resetCode} onChange={(e) => setResetCode(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '12px', outline: 'none' }} required />
+                <input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '16px', outline: 'none' }} required />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button type="button" onClick={() => setShowForgotModal(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>Cancel</button>
+                  <button type="submit" style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Update Password</button>
+                </div>
+              </form>
+            )}
+            {forgotMessage && <p style={{ marginTop: '12px', fontSize: '13px', color: forgotMessage.includes('Error') ? '#f23f43' : '#23a55a' }}>{forgotMessage}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
