@@ -6,6 +6,8 @@ const {
   createConversation,
   listMessages,
   sendMessage,
+  deleteGroup,
+  leaveGroup,
   reportMessage,
 } = require("../controllers/conversationController");
 
@@ -25,6 +27,8 @@ const createConversationRouter = ({ requireAuth }) => {
   router.get("/eligible-users", listEligibleUsers);
   router.post("/", createConversation);
   router.post("/dm", createDM);
+  router.delete("/:id", deleteGroup);
+  router.post("/:id/leave", leaveGroup);
   router.get("/:id/messages", listMessages);
   router.post("/:id/messages", sendMessage);
   router.post("/:id/messages/:messageId/reports", reportMessage);

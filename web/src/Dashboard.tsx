@@ -20,13 +20,26 @@ interface GroupChat {
   avatarText: string;
   color: string;
   channels: string[];
+  createdBy?: string;
+  members?: EligibleGroupMember[];
   messages: Record<string, Message[]>;
 }
 
 interface EligibleGroupMember {
   _id: string;
   username: string;
+  nickname?: string;
 }
+
+interface ConversationSummary {
+  _id: string;
+  type: 0 | 1;
+  members?: Array<string | { _id: string }>;
+  lastMessageAt?: string;
+}
+
+const conversationReadKey = (userId: string, conversationId: string) =>
+  `harmony:last-read:${userId}:${conversationId}`;
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -73,6 +86,9 @@ export default function Dashboard() {
   const [friendActionHasError, setFriendActionHasError] = useState(false);
   const [friendActionLoadingId, setFriendActionLoadingId] = useState<string | null>(null);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [showDeleteGroupModal, setShowDeleteGroupModal] = useState(false);
+  const [groupActionMessage, setGroupActionMessage] = useState('');
+  const [groupActionLoading, setGroupActionLoading] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [viewProfileUser, setViewProfileUser] = useState<any | null>(null);
@@ -162,20 +178,27 @@ export default function Dashboard() {
   const [incomingFriendRequests, setIncomingFriendRequests] = useState<any[]>([]);
   const [outgoingFriendRequests, setOutgoingFriendRequests] = useState<any[]>([]);
   const [groupChats, setGroupChats] = useState<GroupChat[]>([]);
+  const [conversationRecords, setConversationRecords] = useState<ConversationSummary[]>([]);
+  const [unreadConversationIds, setUnreadConversationIds] = useState<string[]>([]);
 
-  const normalizeFriend = (friend: any) => ({
-    friendshipId: friend.friendshipId ?? friend._id ?? null,
-    id: friend.user?._id ?? friend._id ?? friend.id ?? Date.now(),
-    name: friend.user?.username ?? friend.username ?? friend.name ?? 'Unknown User',
-    status: 'Online',
-    avatarText: (friend.user?.username ?? friend.username ?? 'U').charAt(0).toUpperCase(),
-    avatarUrl: friend.user?.avatar ?? '',
-    color: '#5865F2',
-    isBlocked: false,
-    mutualFriends: [],
-    mutualGroups: [],
-    messages: [],
-  });
+  const normalizeFriend = (friend: any) => {
+    const username = friend.user?.username ?? friend.username ?? friend.name ?? 'Unknown User';
+    const name = friend.user?.nickname ?? friend.nickname ?? username;
+    return {
+      friendshipId: friend.friendshipId ?? friend._id ?? null,
+      id: friend.user?._id ?? friend._id ?? friend.id ?? Date.now(),
+      name,
+      username,
+      status: 'Online',
+      avatarText: name.charAt(0).toUpperCase(),
+      avatarUrl: friend.user?.avatar ?? '',
+      color: '#5865F2',
+      isBlocked: false,
+      mutualFriends: [],
+      mutualGroups: [],
+      messages: [],
+    };
+  };
 
   const applyFriendData = (friendPayload: any) => {
     setFriends((friendPayload?.friends ?? []).map(normalizeFriend));
@@ -190,10 +213,13 @@ export default function Dashboard() {
 
   const normalizeConversation = (conversation: any): GroupChat => ({
     id: conversation._id,
+    _id: conversation._id,
     name: conversation.name || 'Group Chat',
     avatarText: (conversation.name || 'G').charAt(0).toUpperCase(),
     color: '#5865F2',
     channels: ['general'],
+    createdBy: String(conversation.createdBy?._id ?? conversation.createdBy ?? ''),
+    members: conversation.members || [],
     messages: {
       general: [],
     },
@@ -206,7 +232,7 @@ export default function Dashboard() {
       const payload = await api<any>(`/api/conversations/${conversationId}/messages`);
       const mapped = (payload.messages || []).map((message: any) => ({
         _id: message._id,
-        sender: message.senderUsername || 'Unknown',
+        sender: message.senderNickname || message.senderUsername || 'Unknown',
         text: message.content || '',
         content: message.content || '',
         isRemoved: message.isRemoved === true,
@@ -217,6 +243,31 @@ export default function Dashboard() {
       console.warn('Failed to load conversation messages:', error);
       setLiveMessages([]);
     }
+  };
+
+  const markConversationRead = (conversationId: string) => {
+    if (!currentUser?._id || !conversationId) return;
+    localStorage.setItem(
+      conversationReadKey(String(currentUser._id), conversationId),
+      new Date().toISOString()
+    );
+    setUnreadConversationIds((previous) =>
+      previous.filter((id) => id !== conversationId)
+    );
+  };
+
+  const isConversationUnread = (conversationId: string | number) =>
+    unreadConversationIds.includes(String(conversationId));
+
+  const isFriendConversationUnread = (friendId: string | number) => {
+    const conversation = conversationRecords.find(
+      (item) =>
+        item.type === 0 &&
+        item.members?.some((member) =>
+          String(typeof member === 'string' ? member : member._id) === String(friendId)
+        )
+    );
+    return conversation ? isConversationUnread(conversation._id) : false;
   };
 
   const loadDashboardData = async () => {
@@ -242,7 +293,22 @@ export default function Dashboard() {
 
       applyFriendData(friendPayload);
 
-      const groupConversations = (conversationPayload?.conversations ?? []).filter(
+      const conversations: ConversationSummary[] = conversationPayload?.conversations ?? [];
+      const userId = String(profile?.user?._id ?? '');
+      if (userId) {
+        conversations.forEach((conversation) => {
+          const key = conversationReadKey(userId, String(conversation._id));
+          if (!localStorage.getItem(key)) {
+            localStorage.setItem(
+              key,
+              conversation.lastMessageAt || new Date().toISOString()
+            );
+          }
+        });
+      }
+      setConversationRecords(conversations);
+
+      const groupConversations = conversations.filter(
         (conversation: any) => conversation.type === 1
       );
       setGroupChats(groupConversations.map(normalizeConversation));
@@ -252,6 +318,7 @@ export default function Dashboard() {
       setIncomingFriendRequests([]);
       setOutgoingFriendRequests([]);
       setGroupChats(fallbackGroupChats);
+      setConversationRecords([]);
     }
   };
 
@@ -344,14 +411,24 @@ export default function Dashboard() {
 
       const createdGroup: GroupChat = {
         id: payload.conversation._id,
+        _id: payload.conversation._id,
         name: payload.conversation.name || name,
         avatarText: (payload.conversation.name || name)[0]?.toUpperCase() || 'G',
         color: '#23a55a',
         channels: ['general'],
+        createdBy: String(payload.conversation.createdBy?._id ?? payload.conversation.createdBy ?? ''),
+        members: payload.conversation.members || [],
         messages: { general: [] },
       };
 
       setGroupChats((prev) => [createdGroup, ...prev]);
+      setConversationRecords((previous) => [
+        payload.conversation,
+        ...previous.filter((conversation) =>
+          String(conversation._id) !== String(payload.conversation._id)
+        ),
+      ]);
+      markConversationRead(String(payload.conversation._id));
       setGroupInput('');
       setSelectedGroupMemberIds([]);
       setShowCreateGroupModal(false);
@@ -361,6 +438,61 @@ export default function Dashboard() {
       setGroupCreateError(error instanceof Error ? error.message : 'Could not create the group. Please try again.');
     } finally {
       setGroupCreating(false);
+    }
+  };
+
+  const finishGroupAction = (groupId: string) => {
+    setGroupChats((prev) => prev.filter((group) => String(group._id || group.id) !== groupId));
+    setConversationRecords((previous) =>
+      previous.filter((conversation) => String(conversation._id) !== groupId)
+    );
+    setUnreadConversationIds((previous) =>
+      previous.filter((conversationId) => conversationId !== groupId)
+    );
+    if (currentUser?._id) {
+      localStorage.removeItem(conversationReadKey(String(currentUser._id), groupId));
+    }
+    setLiveMessages([]);
+    setCurrentView({ type: 'friends' });
+    setGroupActionMessage('');
+  };
+
+  const handleDeleteGroup = async () => {
+    const groupId = String(currentView.data?._id || currentView.data?.id || '');
+    if (!groupId) {
+      setGroupActionMessage('This group is missing its API ID.');
+      return;
+    }
+
+    setGroupActionLoading(true);
+    setGroupActionMessage('');
+    try {
+      await api(`/api/conversations/${groupId}`, { method: 'DELETE' });
+      setShowDeleteGroupModal(false);
+      finishGroupAction(groupId);
+    } catch (error) {
+      setGroupActionMessage(error instanceof Error ? error.message : 'Could not delete the group.');
+    } finally {
+      setGroupActionLoading(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    const groupId = String(currentView.data?._id || currentView.data?.id || '');
+    if (!groupId) {
+      setGroupActionMessage('This group is missing its API ID.');
+      return;
+    }
+
+    setGroupActionLoading(true);
+    setGroupActionMessage('');
+    try {
+      await api(`/api/conversations/${groupId}/leave`, { method: 'POST' });
+      finishGroupAction(groupId);
+    } catch (error) {
+      setGroupActionMessage(error instanceof Error ? error.message : 'Could not leave the group.');
+    } finally {
+      setGroupActionLoading(false);
     }
   };
 
@@ -401,6 +533,72 @@ export default function Dashboard() {
   useEffect(() => {
     loadDashboardData();
   }, []);
+
+  const activeConversationId =
+    currentView.type === 'dm' || currentView.type === 'group'
+      ? String(currentView.data?._id || (currentView.type === 'group' ? currentView.data?.id : ''))
+      : '';
+
+  useEffect(() => {
+    if (!currentUser?._id || conversationRecords.length === 0) return;
+
+    let cancelled = false;
+    const refreshUnreadConversations = async () => {
+      const userId = String(currentUser._id);
+      const results = await Promise.all(
+        conversationRecords.map(async (conversation) => {
+          const conversationId = String(conversation._id);
+          const key = conversationReadKey(userId, conversationId);
+
+          if (conversationId === activeConversationId) {
+            localStorage.setItem(key, new Date().toISOString());
+            return { conversationId, unread: false as boolean | null };
+          }
+
+          let readAt = localStorage.getItem(key);
+          if (!readAt) {
+            readAt = conversation.lastMessageAt || new Date().toISOString();
+            localStorage.setItem(key, readAt);
+            return { conversationId, unread: false as boolean | null };
+          }
+
+          try {
+            const payload = await api<any>(
+              `/api/conversations/${conversationId}/messages?after=${encodeURIComponent(readAt)}`
+            );
+            const hasIncomingMessage = (payload.messages || []).some(
+              (message: any) =>
+                String(message.sender?._id ?? message.sender) !== userId
+            );
+            return { conversationId, unread: hasIncomingMessage };
+          } catch (error) {
+            console.warn(`Could not check unread messages for conversation ${conversationId}:`, error);
+            return { conversationId, unread: null };
+          }
+        })
+      );
+
+      if (cancelled) return;
+      setUnreadConversationIds((previous) => {
+        const unreadIds = new Set(previous);
+        results.forEach(({ conversationId, unread }) => {
+          if (unread === true) unreadIds.add(conversationId);
+          else if (unread === false) unreadIds.delete(conversationId);
+        });
+        return Array.from(unreadIds);
+      });
+    };
+
+    void refreshUnreadConversations();
+    const intervalId = window.setInterval(() => {
+      void refreshUnreadConversations();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [conversationRecords, currentUser?._id, activeConversationId]);
 
   // Helper renderer for avatars
   const renderAvatar = (item: { avatarUrl?: string; avatarText: string; color: string }, size: number = 32) => {
@@ -524,7 +722,7 @@ export default function Dashboard() {
             ...prev,
             {
               _id: payload.message._id,
-              sender: payload.message.senderUsername || 'You',
+              sender: payload.message.senderNickname || payload.message.senderUsername || currentUser?.nickname || currentUser?.username || 'You',
               text: payload.message.content || trimmedMessage,
               content: payload.message.content || trimmedMessage,
               createdAt: payload.message.createdAt,
@@ -542,7 +740,7 @@ export default function Dashboard() {
     if (currentView.type === 'dm') {
       const updatedFriends = friends.map(f => {
         if (f.id === currentView.data.id) {
-          return { ...f, messages: [...f.messages, { sender: 'You', text: messageInput }] };
+          return { ...f, messages: [...f.messages, { sender: currentUser?.nickname || currentUser?.username || 'You', text: messageInput }] };
         }
         return f;
       });
@@ -557,7 +755,7 @@ export default function Dashboard() {
             ...g, 
             messages: { 
               ...g.messages, 
-              [activeChannel]: [...currentChannelMessages, { sender: 'You', text: messageInput }] 
+              [activeChannel]: [...currentChannelMessages, { sender: currentUser?.nickname || currentUser?.username || 'You', text: messageInput }] 
             } 
           };
         }
@@ -621,6 +819,7 @@ export default function Dashboard() {
               <div 
                 key={group.id} 
                 onClick={async () => {
+                  markConversationRead(String(group._id || group.id));
                   const nextView = { type: 'group' as const, data: group, channel: group.channels[0] };
                   setCurrentView(nextView);
                   await loadConversationMessages(String(group.id));
@@ -639,8 +838,17 @@ export default function Dashboard() {
                 }} 
                 title={group.name}
               >
-                <div style={{ width: '32px', height: '32px', backgroundColor: group.color, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: "4px", color: 'white', fontWeight: 'bold', fontSize: '15px', flexShrink: 0 }}>
+                <div style={{ width: '32px', height: '32px', backgroundColor: group.color, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: "4px", color: 'white', fontWeight: 'bold', fontSize: '15px', flexShrink: 0, position: 'relative' }}>
                   {group.avatarText}
+                  {isConversationUnread(group._id || group.id) && (
+                    <span
+                      aria-label="Unread messages"
+                      title="Unread messages"
+                      style={{ position: 'absolute', top: '-4px', right: '-6px', width: '17px', height: '17px', backgroundColor: '#f23f43', color: '#fff', border: '2px solid #1e1f22', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', lineHeight: 1 }}
+                    >
+                      !
+                    </span>
+                  )}
                 </div>
                 {leftSidebarExpanded && (
                   <span style={{ color: '#f2f3f5', fontWeight: '500', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
@@ -708,6 +916,37 @@ export default function Dashboard() {
                   </div>
                 );
               })}
+              <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#949ba4', margin: '18px 0 8px', paddingLeft: '8px', textTransform: 'uppercase' }}>
+                Members ({currentView.data.members?.length || 0})
+              </div>
+              {(currentView.data.members || []).map((member: EligibleGroupMember) => (
+                <div key={member._id} style={{ padding: '7px 10px', color: '#dbdee1', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {member.nickname || member.username}
+                </div>
+              ))}
+              {currentView.data._id && (
+                <div style={{ marginTop: '14px', padding: '8px', borderTop: '1px solid #3f4147' }}>
+                  {String(currentView.data.createdBy) === String(currentUser?._id) ? (
+                    <button
+                      type="button"
+                      onClick={() => { setGroupActionMessage(''); setShowDeleteGroupModal(true); }}
+                      style={{ width: '100%', backgroundColor: 'transparent', border: '1px solid #f23f43', color: '#f23f43', borderRadius: '4px', padding: '7px 10px', cursor: 'pointer' }}
+                    >
+                      Delete Group
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleLeaveGroup()}
+                      disabled={groupActionLoading}
+                      style={{ width: '100%', backgroundColor: 'transparent', border: '1px solid #949ba4', color: '#dbdee1', borderRadius: '4px', padding: '7px 10px', cursor: groupActionLoading ? 'wait' : 'pointer' }}
+                    >
+                      {groupActionLoading ? 'Leaving…' : 'Leave Group'}
+                    </button>
+                  )}
+                  {groupActionMessage && <div style={{ color: '#f23f43', fontSize: '12px', marginTop: '8px' }}>{groupActionMessage}</div>}
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -752,6 +991,13 @@ export default function Dashboard() {
                         body: { recipientId: f.id },
                       });
                       const conversation = payload.conversation || { _id: f.id };
+                      const conversationId = String(conversation._id);
+                      setConversationRecords((previous) =>
+                        previous.some((item) => String(item._id) === conversationId)
+                          ? previous
+                          : [...previous, conversation]
+                      );
+                      markConversationRead(conversationId);
                       setCurrentView({ type: 'dm', data: { ...f, _id: conversation._id } });
                       await loadConversationMessages(conversation._id);
                     } catch (error) {
@@ -765,9 +1011,20 @@ export default function Dashboard() {
                     {renderAvatar(f, 32)}
                     <div style={{ position: 'absolute', bottom: -1, right: -1, width: '10px', height: '10px', backgroundColor: f.isBlocked ? '#f23f43' : '#23a55a', borderRadius: '50%', border: '2px solid #2b2d31' }}></div>
                   </div>
-                  <div style={{ overflow: 'hidden' }}>
-                    <span style={{ fontSize: '14px', color: f.isBlocked ? '#949ba4' : '#dbdee1', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: '160px' }}>{f.name}</span>
-                    {f.isBlocked && <div style={{ fontSize: '10px', color: '#f23f43' }}>Blocked</div>}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flex: 1, minWidth: 0 }}>
+                    <div style={{ overflow: 'hidden' }}>
+                      <span style={{ fontSize: '14px', color: f.isBlocked ? '#949ba4' : '#dbdee1', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: '160px' }}>{f.name}</span>
+                      {f.isBlocked && <div style={{ fontSize: '10px', color: '#f23f43' }}>Blocked</div>}
+                    </div>
+                    {isFriendConversationUnread(f.id) && (
+                      <span
+                        aria-label="Unread messages"
+                        title="Unread messages"
+                        style={{ width: '18px', height: '18px', flexShrink: 0, backgroundColor: '#f23f43', color: '#fff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 'bold', lineHeight: 1 }}
+                      >
+                        !
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -989,6 +1246,13 @@ export default function Dashboard() {
                             body: { recipientId: f.id },
                           });
                           const conversation = payload.conversation || { _id: f.id };
+                          const conversationId = String(conversation._id);
+                          setConversationRecords((previous) =>
+                            previous.some((item) => String(item._id) === conversationId)
+                              ? previous
+                              : [...previous, conversation]
+                          );
+                          markConversationRead(conversationId);
                           setCurrentView({ type: 'dm', data: { ...f, _id: conversation._id } });
                           await loadConversationMessages(conversation._id);
                         } catch (error) {
@@ -1125,15 +1389,24 @@ export default function Dashboard() {
 
             {/* Message Input Box */}
             <div style={{ padding: '20px' }}>
-              <form onSubmit={handleSendMessage}>
+              <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '8px' }}>
                 <input 
                   type="text" 
                   disabled={currentView.type === 'dm' && currentView.data.isBlocked}
                   placeholder={currentView.type === 'dm' && currentView.data.isBlocked ? "Cannot send messages to a blocked user" : `Message ${currentView.type === 'dm' ? '@' + currentView.data.name : '#' + (currentView.channel || currentView.data.channels[0])}`}
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  style={{ width: '100%', backgroundColor: currentView.type === 'dm' && currentView.data.isBlocked ? '#1e1f22' : '#383a40', border: 'none', borderRadius: '8px', padding: '12px 16px', color: '#f2f3f5', outline: 'none', fontSize: '15px', boxSizing: 'border-box', cursor: currentView.type === 'dm' && currentView.data.isBlocked ? 'not-allowed' : 'text' }}
+                  style={{ flex: 1, minWidth: 0, backgroundColor: currentView.type === 'dm' && currentView.data.isBlocked ? '#1e1f22' : '#383a40', border: 'none', borderRadius: '8px', padding: '12px 16px', color: '#f2f3f5', outline: 'none', fontSize: '15px', boxSizing: 'border-box', cursor: currentView.type === 'dm' && currentView.data.isBlocked ? 'not-allowed' : 'text' }}
                 />
+                <button
+                  type="submit"
+                  aria-label="Send message"
+                  title="Send message"
+                  disabled={currentView.type === 'dm' && currentView.data.isBlocked}
+                  style={{ width: '48px', flexShrink: 0, backgroundColor: currentView.type === 'dm' && currentView.data.isBlocked ? '#3f4147' : '#5865F2', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '20px', cursor: currentView.type === 'dm' && currentView.data.isBlocked ? 'not-allowed' : 'pointer' }}
+                >
+                  ➤
+                </button>
               </form>
             </div>
           </div>
@@ -1318,6 +1591,36 @@ export default function Dashboard() {
                 style={{ backgroundColor: '#5865F2', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '4px', fontWeight: 'bold', cursor: groupMembersLoading || groupCreating ? 'wait' : 'pointer', opacity: groupMembersLoading || groupCreating ? 0.7 : 1 }}
               >
                 {groupCreating ? 'Creating…' : 'Create Group'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteGroupModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 120 }}>
+          <div style={{ backgroundColor: '#313338', padding: '24px', borderRadius: '8px', width: '400px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+            <h3 style={{ color: '#f2f3f5', marginTop: 0 }}>Delete group?</h3>
+            <p style={{ color: '#dbdee1', fontSize: '14px' }}>
+              Are you sure you want to delete <strong>{currentView.data?.name}</strong>? This permanently deletes the group and its messages. Existing reports will remain.
+            </p>
+            {groupActionMessage && <p style={{ color: '#f23f43', fontSize: '13px' }}>{groupActionMessage}</p>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <button
+                type="button"
+                onClick={() => setShowDeleteGroupModal(false)}
+                disabled={groupActionLoading}
+                style={{ backgroundColor: 'transparent', color: '#fff', border: 'none', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteGroup()}
+                disabled={groupActionLoading}
+                style={{ backgroundColor: '#f23f43', color: '#fff', border: 'none', padding: '9px 14px', borderRadius: '4px', fontWeight: 'bold', cursor: groupActionLoading ? 'wait' : 'pointer' }}
+              >
+                {groupActionLoading ? 'Deleting…' : 'Delete Group'}
               </button>
             </div>
           </div>
@@ -1527,6 +1830,7 @@ export default function Dashboard() {
               {renderAvatar(viewProfileUser, 72)}
             </div>
             <h3 style={{ color: '#f2f3f5', fontSize: '20px', marginBottom: '4px', textAlign: 'center' }}>{viewProfileUser.name}</h3>
+            <div style={{ color: '#b5bac1', fontSize: '13px', marginBottom: '8px', textAlign: 'center' }}>@{viewProfileUser.username}</div>
             <p style={{ color: viewProfileUser.isBlocked ? '#f23f43' : '#23a55a', fontSize: '14px', marginBottom: '20px', textAlign: 'center' }}>
               {viewProfileUser.isBlocked ? 'Blocked User' : 'Online / Active'}
             </p>

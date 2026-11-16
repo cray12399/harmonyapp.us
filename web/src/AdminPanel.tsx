@@ -20,6 +20,7 @@ export interface ReportedMessage {
   messageContent: string;
   timestamp: string;
   status: 'pending' | 'kept' | 'deleted';
+  groupDeleted: boolean;
 }
 
 export interface AdminChatMessage {
@@ -50,16 +51,29 @@ export default function AdminPanel() {
     };
   };
 
-  const normalizeReport = (report: any): ReportedMessage => ({
-    id: report._id || report.id,
-    senderUsername: report.message?.sender?.username || 'unknown',
-    reportedBy: report.reportedBy?.username || 'unknown',
-    location: report.message?.conversation ? `${report.message.conversation.name || 'Conversation'} (${report.message.conversation.type === 0 ? 'DM' : 'Group'})` : 'Unknown chat',
-    reason: report.reason || 'No reason provided',
-    messageContent: report.message?.content || 'Message unavailable',
-    timestamp: report.createdAt ? new Date(report.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown time',
-    status: report.status || 'pending',
-  });
+  const normalizeReport = (report: any): ReportedMessage => {
+    const groupDeleted = Boolean(
+      report.message &&
+      typeof report.message === 'object' &&
+      !report.message.conversation
+    );
+
+    return {
+      id: report._id || report.id,
+      senderUsername: report.message?.sender?.username || 'unknown',
+      reportedBy: report.reportedBy?.username || 'unknown',
+      location: groupDeleted
+        ? 'Group deleted'
+        : report.message?.conversation
+          ? `${report.message.conversation.name || 'Conversation'} (${report.message.conversation.type === 0 ? 'DM' : 'Group'})`
+          : 'Unknown chat',
+      reason: report.reason || 'No reason provided',
+      messageContent: report.message?.content || 'Message unavailable',
+      timestamp: report.createdAt ? new Date(report.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown time',
+      status: report.status || 'pending',
+      groupDeleted,
+    };
+  };
 
   // Top-level Admin Section Tab
   const [adminSection, setAdminSection] = useState<'users' | 'reports' | 'chat'>('users');
@@ -787,17 +801,19 @@ export default function AdminPanel() {
                     </div>
 
                     <div>
-                      {report.status === 'pending' && (
+                      {report.groupDeleted ? (
+                        <span style={{ backgroundColor: 'rgba(240, 178, 50, 0.2)', color: '#f0b232', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
+                          Group deleted
+                        </span>
+                      ) : report.status === 'pending' ? (
                         <span style={{ backgroundColor: 'rgba(240, 178, 50, 0.2)', color: '#f0b232', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
                           Pending Review
                         </span>
-                      )}
-                      {report.status === 'kept' && (
+                      ) : report.status === 'kept' ? (
                         <span style={{ backgroundColor: 'rgba(35, 165, 90, 0.2)', color: '#23a55a', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
                           ✓ Kept (Dismissed)
                         </span>
-                      )}
-                      {report.status === 'deleted' && (
+                      ) : (
                         <span style={{ backgroundColor: 'rgba(242, 63, 67, 0.2)', color: '#f23f43', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
                           ✕ Message Removed
                         </span>
@@ -844,37 +860,50 @@ export default function AdminPanel() {
                         Review Details
                       </button>
 
-                      <button
-                        onClick={() => handleReportDecision(report.id, 'kept')}
-                        style={{
-                          backgroundColor: report.status === 'kept' ? '#23a55a' : 'transparent',
-                          color: report.status === 'kept' ? '#fff' : '#23a55a',
-                          border: '1px solid #23a55a',
-                          padding: '6px 14px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ✓ Keep Message
-                      </button>
+                      {report.status === 'pending' && (
+                        report.groupDeleted ? (
+                          <button
+                            onClick={() => handleReportDecision(report.id, 'kept')}
+                            style={{ backgroundColor: 'transparent', color: '#23a55a', border: '1px solid #23a55a', padding: '6px 14px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}
+                          >
+                            ✓ Mark as seen
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleReportDecision(report.id, 'kept')}
+                              style={{
+                                backgroundColor: 'transparent',
+                                color: '#23a55a',
+                                border: '1px solid #23a55a',
+                                padding: '6px 14px',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ✓ Keep Message
+                            </button>
 
-                      <button
-                        onClick={() => handleReportDecision(report.id, 'deleted')}
-                        style={{
-                          backgroundColor: report.status === 'deleted' ? '#f23f43' : 'transparent',
-                          color: report.status === 'deleted' ? '#fff' : '#f23f43',
-                          border: '1px solid #f23f43',
-                          padding: '6px 14px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        🗑️ Remove Message
-                      </button>
+                            <button
+                              onClick={() => handleReportDecision(report.id, 'deleted')}
+                              style={{
+                                backgroundColor: 'transparent',
+                                color: '#f23f43',
+                                border: '1px solid #f23f43',
+                                padding: '6px 14px',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              🗑️ Remove Message
+                            </button>
+                          </>
+                        )
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1023,20 +1052,31 @@ export default function AdminPanel() {
               >
                 Close
               </button>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button
-                  onClick={() => handleReportDecision(inspectingReport.id, 'kept')}
-                  style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
-                >
-                  ✓ Keep Message
-                </button>
-                <button
-                  onClick={() => handleReportDecision(inspectingReport.id, 'deleted')}
-                  style={{ backgroundColor: '#f23f43', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
-                >
-                  🗑️ Get Rid of Message
-                </button>
-              </div>
+              {inspectingReport.status === 'pending' && (
+                inspectingReport.groupDeleted ? (
+                  <button
+                    onClick={() => handleReportDecision(inspectingReport.id, 'kept')}
+                    style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                  >
+                    ✓ Mark as seen
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      onClick={() => handleReportDecision(inspectingReport.id, 'kept')}
+                      style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      ✓ Keep Message
+                    </button>
+                    <button
+                      onClick={() => handleReportDecision(inspectingReport.id, 'deleted')}
+                      style={{ backgroundColor: '#f23f43', color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '4px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                    >
+                      🗑️ Get Rid of Message
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           </div>
         </div>
