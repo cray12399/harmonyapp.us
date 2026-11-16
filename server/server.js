@@ -9,7 +9,7 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const createConversationRouter = require("./routes/conversationRoutes");
 const authMiddleware = require("./middleware/authMiddleware");
-
+const friendRoutes = require("./routes/friendRoutes");
 const app = express();
 
 app.use(cors());
@@ -17,6 +17,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/conversations", createConversationRouter({ requireAuth: authMiddleware }));
+app.use("/api/friends", friendRoutes);
 
 app.get("/api/ping", (req, res) => {
   res.status(200).json({
