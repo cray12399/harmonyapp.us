@@ -88,7 +88,7 @@ before(async () => {
     return friendship;
   });
   replace(Friendship, "findOneAndUpdate", async () => {
-    friendship.status = "accepted";
+    friendship.status = 1;
     return friendship;
   });
   replace(Friendship, "find", () => query(friendship ? [{

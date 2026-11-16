@@ -3,6 +3,11 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Friendship = require("../models/Friendship");
 
+const FRIENDSHIP_STATUS = {
+  PENDING: 0,
+  ACCEPTED: 1,
+};
+
 const sendFriendRequest = async (req, res) => {
   const userId = req.user?.userId;
   const { recipientId } = req.body ?? {};
@@ -50,7 +55,7 @@ const sendFriendRequest = async (req, res) => {
     if (existing) {
       return res.status(409).json({
         error:
-          existing.status === "accepted"
+          existing.status === FRIENDSHIP_STATUS.ACCEPTED
             ? "You are already friends"
             : "A friend request already exists between these users",
       });
@@ -60,7 +65,7 @@ const sendFriendRequest = async (req, res) => {
       requester: userId,
       recipient: recipientId,
       pairKey,
-      status: "pending",
+      status: FRIENDSHIP_STATUS.PENDING,
     });
 
     return res.status(201).json({
@@ -98,11 +103,11 @@ const acceptFriendRequest = async (req, res) => {
       {
         _id: requestId,
         recipient: userId,
-        status: "pending",
+        status: FRIENDSHIP_STATUS.PENDING,
       },
       {
         $set: {
-          status: "accepted",
+          status: FRIENDSHIP_STATUS.ACCEPTED,
           updatedAt: new Date(),
         },
       },
@@ -169,9 +174,9 @@ const listFriends = async (req, res) => {
         createdAt: friendship.createdAt,
       };
 
-      if (friendship.status === "accepted") {
+      if (friendship.status === FRIENDSHIP_STATUS.ACCEPTED) {
         friends.push(entry);
-      } else if (friendship.status === "pending") {
+      } else if (friendship.status === FRIENDSHIP_STATUS.PENDING) {
         if (isRequester) {
           outgoing.push(entry);
         } else {
@@ -230,7 +235,7 @@ const removeFriend = async (req, res) => {
 
     let message = "Friend removed";
 
-    if (friendship.status === "pending") {
+    if (friendship.status === FRIENDSHIP_STATUS.PENDING) {
       message =
         friendship.requester.toString() === userId
           ? "Friend request canceled"

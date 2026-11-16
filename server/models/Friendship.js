@@ -16,9 +16,9 @@ const friendshipSchema = new mongoose.Schema(
     },
 
     status: {
-      type: String,
-      enum: ["pending", "accepted"],
-      default: "pending",
+      type: Number,
+      enum: [0, 1],
+      default: 0,
     },
 
     // Same key regardless of who sends the request.
