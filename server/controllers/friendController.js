@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Friendship = require("../models/Friendship");
 
+
 const FRIENDSHIP_STATUS = {
   PENDING: 0,
   ACCEPTED: 1,

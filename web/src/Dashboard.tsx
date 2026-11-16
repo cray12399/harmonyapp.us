@@ -436,13 +436,6 @@ export default function Dashboard() {
   const filteredFriends = friends.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const pendingFriendRequestsCount = incomingFriendRequests.length + outgoingFriendRequests.length;
 
-  const isMessageFromCurrentUser = (message: any) => {
-    const senderName = String(message?.sender || '').toLowerCase();
-    const currentUserName = String(currentUser?.username || '').toLowerCase();
-    const currentNick = String(currentUser?.nickname || '').toLowerCase();
-    return senderName === currentUserName || senderName === currentNick;
-  };
-
   const handleReportMessage = async () => {
     if (!reportTarget || !reportReason.trim()) return;
 
@@ -1398,12 +1391,18 @@ export default function Dashboard() {
             <div style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#b5bac1' }}>EMAIL</label>
-                <button type="button" title="Email updates are not supported by the current backend API." style={{ background: 'none', border: 'none', color: '#949ba4', fontSize: '12px', cursor: 'not-allowed' }}>
-                  🔒
+                <button
+                  type="button"
+                  onClick={() => setShowEmail(!showEmail)}
+                  title={showEmail ? 'Hide email' : 'Show email'}
+                  aria-label={showEmail ? 'Hide email' : 'Show email'}
+                  style={{ background: 'none', border: 'none', color: '#b5bac1', padding: '2px', cursor: 'pointer' }}
+                >
+                  {renderPasswordEye(showEmail)}
                 </button>
               </div>
               <div style={{ color: '#f2f3f5', fontSize: '15px', backgroundColor: '#1e1f22', padding: '10px', borderRadius: '4px' }}>
-                {showEmail ? (currentUser?.email || 'No email available') : '••••••••••••@••••••.us'}
+                {showEmail ? (currentUser?.email || 'No email available') : (currentUser?.email ? currentUser.email.replace(/^[^@]+/, '••••••••') : '••••••••')}
               </div>
             </div>
 
