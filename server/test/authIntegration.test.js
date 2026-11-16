@@ -14,9 +14,32 @@ const memberId = new mongoose.Types.ObjectId();
 const otherId1 = new mongoose.Types.ObjectId();
 const otherId2 = new mongoose.Types.ObjectId();
 const conversationId = new mongoose.Types.ObjectId();
+const testPasswordHash = bcrypt.hashSync("password123", 4);
+const resendApiKeyBeforeTests = process.env.RESEND_API_KEY;
+delete process.env.RESEND_API_KEY;
 const users = new Map([
-  [String(adminId), { _id: adminId, username: "admin", status: 2, isVerified: true }],
-  [String(memberId), { _id: memberId, username: "member", status: 1, isVerified: true }],
+  [String(adminId), {
+    _id: adminId,
+    username: "admin",
+    nickname: "Admin",
+    email: "admin@example.com",
+    passwordHash: testPasswordHash,
+    status: 2,
+    isVerified: true,
+    createdAt: new Date(),
+    save: async function () { users.set(String(this._id), this); },
+  }],
+  [String(memberId), {
+    _id: memberId,
+    username: "member",
+    nickname: "Member",
+    email: "member@example.com",
+    passwordHash: testPasswordHash,
+    status: 1,
+    isVerified: true,
+    createdAt: new Date(),
+    save: async function () { users.set(String(this._id), this); },
+  }],
 ]);
 const secretBeforeTests = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "local-test-secret-that-is-not-used-for-deployment";
@@ -30,7 +53,6 @@ const tokenFor = (id, options = {}) =>
 
 const adminToken = tokenFor(adminId);
 const memberToken = tokenFor(memberId);
-const testPasswordHash = bcrypt.hashSync("password123", 4);
 const originals = [];
 const replace = (object, name, replacement) => {
   originals.push([object, name, object[name]]);
@@ -43,7 +65,9 @@ const query = (value, methods) => {
   for (const method of methods) {
     result[method] = () => result;
   }
+  result.session = () => result;
   result.lean = async () => value;
+  result.then = (resolve, reject) => Promise.resolve(value).then(resolve, reject);
   return result;
 };
 
@@ -59,6 +83,29 @@ before(async () => {
   replace(User, "find", () =>
     query([...users.values()], ["select", "sort"])
   );
+  replace(User, "create", async (data) => {
+    const user = {
+      _id: new mongoose.Types.ObjectId(),
+      createdAt: new Date(),
+      ...data,
+      save: async function () { users.set(String(this._id), this); },
+    };
+    users.set(String(user._id), user);
+    return user;
+  });
+  replace(User, "findByIdAndUpdate", (id, update) => {
+    const user = users.get(String(id));
+    if (user) {
+      Object.assign(user, update.$set || {});
+      for (const field of Object.keys(update.$unset || {})) delete user[field];
+    }
+    return query(user ? { ...user, passwordHash: undefined } : null, ["select"]);
+  });
+  replace(User, "updateMany", async (filter, update) => {
+    const matched = [...users.values()].filter((user) => user.status !== 2);
+    matched.forEach((user) => { user.status = update.$set.status; });
+    return { matchedCount: matched.length, modifiedCount: matched.length };
+  });
   replace(User, "findOneAndUpdate", (filter, update) => {
     const user = users.get(String(filter._id));
     if (user && user.status !== 2) {
@@ -67,16 +114,24 @@ before(async () => {
     }
     return query(null, ["select"]);
   });
-  replace(User, "countDocuments", async () => 2);
-  replace(User, "findOne", async (filter) => ({
-    _id: memberId,
-    username: "member",
-    passwordHash: testPasswordHash,
-    status: filter.$or?.some((condition) => condition.username === "disabled")
-      ? 0
-      : 1,
-    isVerified: true,
-  }));
+  replace(User, "countDocuments", (filter) =>
+    query([...users.values()].filter((user) =>
+      user.status === filter.status && (!filter.isVerified || user.isVerified)
+    ).length, [])
+  );
+  replace(User, "findOne", (filter) => {
+    if (filter.username !== undefined || filter.email !== undefined) {
+      return query(null, []);
+    }
+    const member = users.get(String(memberId));
+    return query({
+      ...member,
+      status: filter.$or?.some((condition) => condition.username === "disabled")
+        ? 0
+        : member.status,
+    }, ["select"]);
+  });
+  replace(mongoose.connection, "transaction", async (callback) => callback({}));
 
   replace(Conversation, "find", () =>
     query([{ _id: conversationId, members: [adminId, memberId] }], [
@@ -117,6 +172,11 @@ after(async () => {
     delete process.env.JWT_SECRET;
   } else {
     process.env.JWT_SECRET = secretBeforeTests;
+  }
+  if (resendApiKeyBeforeTests === undefined) {
+    delete process.env.RESEND_API_KEY;
+  } else {
+    process.env.RESEND_API_KEY = resendApiKeyBeforeTests;
   }
   if (server) {
     await new Promise((resolve) => server.close(resolve));
@@ -191,6 +251,73 @@ test("an admin can list and promote users; the role changes on the next request"
     (await request("/api/admin/users", { token: memberToken })).status,
     200
   );
+});
+
+test("admins can edit another account and email changes require verification", async () => {
+  const updated = await request(`/api/admin/users/${memberId}`, {
+    token: adminToken,
+    method: "PATCH",
+    body: {
+      username: "updated_member",
+      nickname: "Updated Member",
+      email: "updated@example.com",
+      status: 1,
+    },
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.user.username, "updated_member");
+  assert.equal(updated.body.user.nickname, "Updated Member");
+  assert.equal(updated.body.user.email, "updated@example.com");
+  assert.equal(updated.body.user.isVerified, false);
+  assert.equal(updated.body.user.passwordHash, undefined);
+});
+
+test("admins can set another user's password without returning the hash", async () => {
+  const updated = await request(`/api/admin/users/${memberId}/password`, {
+    token: adminToken,
+    method: "PATCH",
+    body: { password: "new-password-123" },
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(await bcrypt.compare("new-password-123", users.get(String(memberId)).passwordHash), true);
+  assert.equal(updated.body.user.passwordHash, undefined);
+  users.get(String(memberId)).passwordHash = testPasswordHash;
+});
+
+test("admins can create verified-by-email admin accounts and cannot demote themselves", async () => {
+  const created = await request("/api/admin/users", {
+    token: adminToken,
+    method: "POST",
+    body: {
+      username: "newadmin",
+      nickname: "New Admin",
+      email: "newadmin@example.com",
+      password: "new-admin-password",
+    },
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.user.status, 2);
+  assert.equal(created.body.user.isVerified, false);
+  assert.equal(created.body.user.passwordHash, undefined);
+
+  const demotedSelf = await request(`/api/admin/users/${adminId}`, {
+    token: adminToken,
+    method: "PATCH",
+    body: { status: 1 },
+  });
+  assert.equal(demotedSelf.status, 409);
+});
+
+test("bulk status changes apply to regular accounts but leave admins unchanged", async () => {
+  const result = await request("/api/admin/users/bulk-status", {
+    token: adminToken,
+    method: "PATCH",
+    body: { status: 0 },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(users.get(String(memberId)).status, 0);
+  assert.equal(users.get(String(adminId)).status, 2);
+  users.get(String(memberId)).status = 1;
 });
 
 test("disabled or unverified accounts lose access immediately", async () => {

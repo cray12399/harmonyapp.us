@@ -9,6 +9,7 @@ export interface ManagedUser {
   email: string;
   role: 1 | 2; // 1 = Regular User, 2 = Admin
   enabled: boolean;
+  verified: boolean;
 }
 
 export interface ReportedMessage {
@@ -36,9 +37,9 @@ export interface AdminChatMessage {
 export default function AdminPanel() {
   const normalizeUser = (user: any): ManagedUser => {
     const username = user.username || 'unknown';
-    const displayName = username.split(/[_\s-]+/).filter(Boolean);
+    const displayName = (user.nickname || username).split(/[_\s-]+/).filter(Boolean);
     const firstName = displayName[0] ? displayName[0].replace(/^[a-z]/, (c: string) => c.toUpperCase()) : 'User';
-    const lastName = displayName[1] ? displayName[1].replace(/^[a-z]/, (c: string) => c.toUpperCase()) : 'Account';
+    const lastName = displayName.slice(1).join(' ').replace(/(^|\s)[a-z]/g, (c: string) => c.toUpperCase());
 
     return {
       id: user._id || user.id,
@@ -48,6 +49,7 @@ export default function AdminPanel() {
       email: user.email || `${username}@harmonyapp.us`,
       role: user.status === 2 ? 2 : 1,
       enabled: user.status !== 0,
+      verified: user.isVerified === true,
     };
   };
 
@@ -96,6 +98,8 @@ export default function AdminPanel() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showNewPassText, setShowNewPassText] = useState(false);
   const [passwordBanner, setPasswordBanner] = useState('');
+  const [savingUser, setSavingUser] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   // Add Admin Modal State
   const [showAddAdminModal, setShowAddAdminModal] = useState(false);
@@ -109,6 +113,8 @@ export default function AdminPanel() {
   });
   const [addAdminError, setAddAdminError] = useState('');
   const [showAddPassText, setShowAddPassText] = useState(false);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [updatingAllUsers, setUpdatingAllUsers] = useState(false);
 
   // --- REPORTED MESSAGES STATE ---
   const [reports, setReports] = useState<ReportedMessage[]>([]);
@@ -234,9 +240,21 @@ export default function AdminPanel() {
   const regularUsers = users.filter((u) => u.role !== 2);
   const allRegularDisabled = regularUsers.length > 0 && regularUsers.every((u) => !u.enabled);
 
-  const handleToggleAllUsers = () => {
+  const handleToggleAllUsers = async () => {
     const targetState = allRegularDisabled;
-    setUsers(users.map((u) => (u.role === 2 ? u : { ...u, enabled: targetState })));
+    setUpdatingAllUsers(true);
+    setRefreshMessage('');
+    try {
+      await api('/api/admin/users/bulk-status', {
+        method: 'PATCH',
+        body: { status: targetState ? 1 : 0 },
+      });
+      await loadAdminData(true);
+    } catch (error) {
+      setRefreshMessage(error instanceof Error ? error.message : 'Could not update user statuses.');
+    } finally {
+      setUpdatingAllUsers(false);
+    }
   };
 
   const handleToggleSingleUser = async (id: number | string) => {
@@ -252,7 +270,7 @@ export default function AdminPanel() {
       setUsers(users.map((u) => (u.id === id ? { ...u, enabled: nextStatus === 1 } : u)));
     } catch (error) {
       console.warn('Could not update user status via API:', error);
-      setUsers(users.map((u) => (u.id === id ? { ...u, enabled: !u.enabled } : u)));
+      setRefreshMessage(error instanceof Error ? error.message : 'Could not update user status.');
     }
   };
 
@@ -273,60 +291,81 @@ export default function AdminPanel() {
     setPasswordBanner('');
   };
 
-  const handleSaveUserEdits = () => {
+  const handleSaveUserEdits = async () => {
     if (!editingUser) return;
-    if (editForm.username.trim().length <= 3) {
-      setEditError('Username must be longer than 3 characters.');
+    if (editForm.username.trim().length < 3) {
+      setEditError('Username must be at least 3 characters.');
       return;
     }
-    if (!editForm.firstName.trim() || !editForm.lastName.trim() || !editForm.email.trim()) {
-      setEditError('First name, last name, and email are required.');
+    if (!editForm.firstName.trim() || !editForm.email.trim()) {
+      setEditError('Display name and email are required.');
       return;
     }
 
-    setUsers(
-      users.map((u) =>
-        u.id === editingUser.id
-          ? {
-              ...u,
-              username: editForm.username.trim(),
-              firstName: editForm.firstName.trim(),
-              lastName: editForm.lastName.trim(),
-              email: editForm.email.trim(),
-              role: editForm.role,
-            }
-          : u
-      )
-    );
-    setEditingUser(null);
+    setSavingUser(true);
+    setEditError('');
+    try {
+      const result = await api<{ user: any; message?: string }>(`/api/admin/users/${editingUser.id}`, {
+        method: 'PATCH',
+        body: {
+          username: editForm.username.trim(),
+          nickname: `${editForm.firstName.trim()} ${editForm.lastName.trim()}`.trim(),
+          email: editForm.email.trim(),
+          status: editForm.role === 2 ? 2 : editingUser.enabled ? 1 : 0,
+        },
+      });
+      setUsers((previous) => previous.map((user) =>
+        user.id === editingUser.id ? normalizeUser(result.user) : user
+      ));
+      setEditingUser(null);
+      setRefreshMessage(`User management: ${result.message || 'Account updated successfully.'}`);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Could not update this account.');
+      await loadAdminData();
+    } finally {
+      setSavingUser(false);
+    }
   };
 
-  const handleConfirmPasswordReset = () => {
-    if (newPassword.length < 6) {
-      setPasswordBanner('Error: Password must be at least 6 characters.');
+  const handleConfirmPasswordReset = async () => {
+    if (!editingUser) return;
+    if (newPassword.length < 8) {
+      setPasswordBanner('Error: Password must be at least 8 characters.');
       return;
     }
     if (newPassword !== confirmNewPassword) {
       setPasswordBanner('Error: Passwords do not match.');
       return;
     }
-    setPasswordBanner('User password updated successfully! (UI Mock)');
-    setShowPasswordReset(false);
-    setNewPassword('');
-    setConfirmNewPassword('');
+    setResettingPassword(true);
+    setPasswordBanner('');
+    try {
+      await api(`/api/admin/users/${editingUser.id}/password`, {
+        method: 'PATCH',
+        body: { password: newPassword },
+      });
+      setPasswordBanner('User password updated successfully.');
+      setShowPasswordReset(false);
+      setNewPassword('');
+      setConfirmNewPassword('');
+    } catch (error) {
+      setPasswordBanner(`Error: ${error instanceof Error ? error.message : 'Could not update password.'}`);
+    } finally {
+      setResettingPassword(false);
+    }
   };
 
-  const handleCreateAdmin = () => {
+  const handleCreateAdmin = async () => {
     if (newAdminForm.username.trim().length <= 3) {
       setAddAdminError('Username must be longer than 3 characters.');
       return;
     }
-    if (!newAdminForm.firstName.trim() || !newAdminForm.lastName.trim() || !newAdminForm.email.trim()) {
-      setAddAdminError('All name and email fields are required.');
+    if (!newAdminForm.firstName.trim() || !newAdminForm.email.trim()) {
+      setAddAdminError('Display name and email are required.');
       return;
     }
-    if (newAdminForm.password.length < 6) {
-      setAddAdminError('Password must be at least 6 characters.');
+    if (newAdminForm.password.length < 8) {
+      setAddAdminError('Password must be at least 8 characters.');
       return;
     }
     if (newAdminForm.password !== newAdminForm.confirmPassword) {
@@ -334,21 +373,28 @@ export default function AdminPanel() {
       return;
     }
 
-    const nextId = users.length > 0 ? Math.max(...users.map((u) => Number(u.id))) + 1 : 1001;
-    const created: ManagedUser = {
-      id: nextId,
-      username: newAdminForm.username.trim(),
-      firstName: newAdminForm.firstName.trim(),
-      lastName: newAdminForm.lastName.trim(),
-      email: newAdminForm.email.trim(),
-      role: 2,
-      enabled: true,
-    };
-
-    setUsers([...users, created]);
-    setShowAddAdminModal(false);
-    setNewAdminForm({ username: '', firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
+    setCreatingAdmin(true);
     setAddAdminError('');
+    try {
+      const result = await api<{ message: string }>('/api/admin/users', {
+        method: 'POST',
+        body: {
+          username: newAdminForm.username.trim(),
+          nickname: `${newAdminForm.firstName.trim()} ${newAdminForm.lastName.trim()}`.trim(),
+          email: newAdminForm.email.trim(),
+          password: newAdminForm.password,
+        },
+      });
+      setShowAddAdminModal(false);
+      setNewAdminForm({ username: '', firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
+      await loadAdminData();
+      setRefreshMessage(`User management: ${result.message}`);
+    } catch (error) {
+      setAddAdminError(error instanceof Error ? error.message : 'Could not create admin account.');
+      await loadAdminData();
+    } finally {
+      setCreatingAdmin(false);
+    }
   };
 
   // --- REPORTED MESSAGES HANDLERS ---
@@ -562,18 +608,19 @@ export default function AdminPanel() {
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={handleToggleAllUsers}
+                disabled={updatingAllUsers || regularUsers.length === 0}
                 style={{
-                  backgroundColor: allRegularDisabled ? '#23a55a' : '#f23f43',
+                  backgroundColor: updatingAllUsers ? '#3f4147' : allRegularDisabled ? '#23a55a' : '#f23f43',
                   color: '#fff',
                   border: 'none',
                   padding: '9px 16px',
                   borderRadius: '4px',
                   fontWeight: 'bold',
                   fontSize: '13px',
-                  cursor: 'pointer',
+                  cursor: updatingAllUsers || regularUsers.length === 0 ? 'not-allowed' : 'pointer',
                 }}
               >
-                {allRegularDisabled ? '⚡ Enable All' : '⏻ Disable All'}
+                {updatingAllUsers ? 'Updating…' : allRegularDisabled ? '⚡ Enable All' : '⏻ Disable All'}
               </button>
 
               <button
@@ -638,14 +685,14 @@ export default function AdminPanel() {
                             <span
                               style={{
                                 backgroundColor: user.enabled ? 'rgba(35, 165, 90, 0.2)' : 'rgba(242, 63, 67, 0.2)',
-                                color: user.enabled ? '#23a55a' : '#f23f43',
+                                  color: !user.enabled ? '#f23f43' : user.verified ? '#23a55a' : '#f0b232',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 fontSize: '12px',
                                 fontWeight: 'bold',
                               }}
                             >
-                              {user.enabled ? 'Active' : 'Disabled'}
+                              {!user.enabled ? 'Disabled' : user.verified ? 'Active' : 'Unverified'}
                             </span>
                           </td>
                           <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -1172,20 +1219,21 @@ export default function AdminPanel() {
                   <button
                     type="button"
                     onClick={handleConfirmPasswordReset}
+                    disabled={resettingPassword}
                     style={{ backgroundColor: '#f0b232', color: '#111214', border: 'none', padding: '8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
                   >
-                    Confirm Password Reset
+                    {resettingPassword ? 'Updating…' : 'Confirm Password Reset'}
                   </button>
                 </div>
               )}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-              <button onClick={() => setEditingUser(null)} style={{ backgroundColor: 'transparent', color: '#dbdee1', border: 'none', cursor: 'pointer', padding: '8px 14px' }}>
+              <button onClick={() => setEditingUser(null)} disabled={savingUser || resettingPassword} style={{ backgroundColor: 'transparent', color: '#dbdee1', border: 'none', cursor: 'pointer', padding: '8px 14px' }}>
                 Cancel
               </button>
-              <button onClick={handleSaveUserEdits} style={{ backgroundColor: '#5865F2', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
-                Save Changes
+              <button onClick={handleSaveUserEdits} disabled={savingUser || resettingPassword} style={{ backgroundColor: '#5865F2', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                {savingUser ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -1251,11 +1299,11 @@ export default function AdminPanel() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-              <button onClick={() => setShowAddAdminModal(false)} style={{ backgroundColor: 'transparent', color: '#dbdee1', border: 'none', cursor: 'pointer', padding: '8px 14px' }}>
+              <button onClick={() => setShowAddAdminModal(false)} disabled={creatingAdmin} style={{ backgroundColor: 'transparent', color: '#dbdee1', border: 'none', cursor: 'pointer', padding: '8px 14px' }}>
                 Cancel
               </button>
-              <button onClick={handleCreateAdmin} style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
-                Create Admin
+              <button onClick={handleCreateAdmin} disabled={creatingAdmin} style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                {creatingAdmin ? 'Creating…' : 'Create Admin'}
               </button>
             </div>
           </div>
