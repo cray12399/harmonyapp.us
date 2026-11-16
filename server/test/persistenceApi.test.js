@@ -6,6 +6,7 @@ const User = require("../models/User");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
 const MessageReport = require("../models/MessageReport");
+const RevokedToken = require("../models/RevokedToken");
 const { REMOVED_MESSAGE_TEXT } = require("../constants/message");
 const app = require("../server");
 
@@ -16,8 +17,8 @@ const messageId = new mongoose.Types.ObjectId();
 const reportId = new mongoose.Types.ObjectId();
 const oldSecret = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "integration-test-secret";
-const adminToken = jwt.sign({ userId: String(adminId) }, process.env.JWT_SECRET);
-const memberToken = jwt.sign({ userId: String(memberId) }, process.env.JWT_SECRET);
+const adminToken = jwt.sign({ userId: String(adminId) }, process.env.JWT_SECRET, { expiresIn: "1h" });
+const memberToken = jwt.sign({ userId: String(memberId) }, process.env.JWT_SECRET, { expiresIn: "1h" });
 const originals = [];
 const replace = (object, method, value) => {
   originals.push([object, method, object[method]]);
@@ -38,6 +39,7 @@ let report = null;
 let membership = true;
 
 before(async () => {
+  replace(RevokedToken, "findOne", async () => null);
   replace(User, "findById", (id) => query(() =>
     String(id) === String(adminId)
       ? { _id: adminId, username: "admin", status: 2, isVerified: true }

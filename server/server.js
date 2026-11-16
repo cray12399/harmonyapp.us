@@ -6,15 +6,18 @@ const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
+const friendRoutes = require("./routes/friendRoutes");
 const { requireAuth, requireAdmin } = require("./middleware/authMiddleware");
 const createAdminRouter = require("./routes/adminRoutes");
 const createConversationRouter = require("./routes/conversationRoutes");
-
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/friends", friendRoutes);
 app.use("/api/admin", createAdminRouter({ requireAuth, requireAdmin }));
 app.use("/api/conversations", createConversationRouter({ requireAuth }));
 

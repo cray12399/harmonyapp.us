@@ -12,7 +12,7 @@ const conversationSchema = new mongoose.Schema(
       required: true,
     },
     // Stable pair key prevents two simultaneous requests creating duplicate DMs.
-    dmKey: { type: String },
+    dmKey: { type: String, default: undefined },
     lastMessageAt: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
   },

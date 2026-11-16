@@ -42,6 +42,20 @@ const userSchema = new mongoose.Schema({
     default: 1,
   },
 
+  avatar: {
+    type: String,
+    default: "",
+    trim: true,
+    maxlength: 2048,
+  },
+
+  statusMessage: {
+    type: String,
+    default: "",
+    trim: true,
+    maxlength: 200,
+  },
+
   authCode: {
     type: String,
   },

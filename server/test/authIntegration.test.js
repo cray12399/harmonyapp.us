@@ -6,6 +6,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Conversation = require("../models/Conversation");
 const Message = require("../models/Message");
+const RevokedToken = require("../models/RevokedToken");
 const app = require("../server");
 
 const adminId = new mongoose.Types.ObjectId();
@@ -23,6 +24,7 @@ process.env.JWT_SECRET = "local-test-secret-that-is-not-used-for-deployment";
 const tokenFor = (id, options = {}) =>
   jwt.sign({ userId: String(id) }, process.env.JWT_SECRET, {
     algorithm: "HS256",
+    expiresIn: "1h",
     ...options,
   });
 
@@ -50,6 +52,7 @@ let canAccessConversation = true;
 let lastMessage;
 
 before(async () => {
+  replace(RevokedToken, "findOne", async () => null);
   replace(User, "findById", (id) =>
     query(users.get(String(id)) ?? null, ["select"])
   );

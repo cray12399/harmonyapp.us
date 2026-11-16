@@ -1,4 +1,6 @@
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const RevokedToken = require("../models/RevokedToken");
 const mongoose = require("mongoose");
 const User = require("../models/User");
 
@@ -36,7 +38,8 @@ const requireAuth = async (req, res, next) => {
 
   if (
     typeof decoded.userId !== "string" ||
-    !mongoose.isValidObjectId(decoded.userId)
+    !mongoose.isValidObjectId(decoded.userId) ||
+    typeof decoded.exp !== "number"
   ) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
@@ -60,13 +63,32 @@ const requireAuth = async (req, res, next) => {
       return res.status(403).json({ error: "Email verification required" });
     }
 
-    // Controllers use _id and status; /api/auth/me uses userId.
+    // Logout revokes this exact token without invalidating other sessions.
+    const token = authorization.split(" ")[1];
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const revokedToken = await RevokedToken.findOne({ tokenHash });
+
+    if (revokedToken) {
+      return res.status(401).json({
+        error: "Invalid or expired token",
+      });
+    }
+
+    // Controllers use the current database role, not an untrusted token role.
     req.user = {
       _id: user._id,
       userId: String(user._id),
       username: user.username,
       status: user.status,
     };
+
+    req.token = token;
+    req.tokenHash = tokenHash;
+    req.tokenExpiresAt = new Date(decoded.exp * 1000);
 
     return next();
   } catch (error) {
