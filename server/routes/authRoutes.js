@@ -26,4 +26,5 @@ router.get("/me", authMiddleware, getProfile);
 router.patch("/me", authMiddleware, updateProfile);
 router.post("/logout", authMiddleware, logout);
 
+
 module.exports = router;

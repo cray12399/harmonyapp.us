@@ -44,4 +44,5 @@ const friendshipSchema = new mongoose.Schema(
 friendshipSchema.index({ requester: 1 });
 friendshipSchema.index({ recipient: 1 });
 
+
 module.exports = mongoose.model("Friendship", friendshipSchema);

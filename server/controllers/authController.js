@@ -12,6 +12,7 @@ const makeCode = () => String(crypto.randomInt(100000, 1000000));
 const hashCode = (code) =>
   crypto.createHash("sha256").update(code).digest("hex");
 
+
 // POST /api/auth/register
 const register = async (req, res) => {
   console.log("==================================================");

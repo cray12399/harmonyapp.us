@@ -32,74 +32,12 @@ export interface AdminChatMessage {
   timestamp: string;
 }
 
-const INITIAL_MOCK_USERS: ManagedUser[] = [
-  { id: 1001, username: 'TestUser', firstName: 'Test', lastName: 'User', email: 'testuser@harmonyapp.us', role: 2, enabled: true },
-  { id: 1002, username: 'SecondUser', firstName: 'Second', lastName: 'User', email: 'second@harmonyapp.us', role: 1, enabled: true },
-  { id: 1003, username: 'TheHulk', firstName: 'Bruce', lastName: 'Banner', email: 'hulk@harmonyapp.us', role: 1, enabled: true },
-  { id: 1004, username: 'Janke', firstName: 'Matthew', lastName: 'Janke', email: 'matthew@harmonyapp.us', role: 2, enabled: true },
-  { id: 1005, username: 'InactiveDev', firstName: 'Alex', lastName: 'Smith', email: 'alex@harmonyapp.us', role: 1, enabled: false },
-];
-
-const INITIAL_REPORTED_MESSAGES: ReportedMessage[] = [
-  {
-    id: 501,
-    senderUsername: 'InactiveDev',
-    reportedBy: 'SecondUser',
-    location: '#general (Dev Team)',
-    reason: 'Spam / Unsolicited Links',
-    messageContent: 'Click here for free nitro codes!! http://suspicious-link.example.com',
-    timestamp: 'Today at 2:14 PM',
-    status: 'pending',
-  },
-  {
-    id: 502,
-    senderUsername: 'TheHulk',
-    reportedBy: 'TestUser',
-    location: '#homework-help (Dev Team)',
-    reason: 'Off-topic / Caps Spam',
-    messageContent: 'HULK SMASH BUGS IN PRODUCTION SERVER RIGHT NOW!!!',
-    timestamp: 'Today at 1:05 PM',
-    status: 'pending',
-  },
-  {
-    id: 503,
-    senderUsername: 'SecondUser',
-    reportedBy: 'Janke',
-    location: 'DM (@SecondUser)',
-    reason: 'Harassment / False Alarm',
-    messageContent: 'Hey can you review my pull request before tonight?',
-    timestamp: 'Yesterday at 8:42 PM',
-    status: 'kept',
-  },
-];
-
-const INITIAL_ADMIN_MESSAGES: AdminChatMessage[] = [
-  {
-    id: 1,
-    sender: 'Janke',
-    roleTitle: 'Lead Admin',
-    avatarText: 'J',
-    color: '#f23f43',
-    text: 'Welcome to the private Admin Chat! Use this channel to coordinate user reports and server moderation.',
-    timestamp: 'Today at 10:30 AM',
-  },
-  {
-    id: 2,
-    sender: 'TestUser',
-    roleTitle: 'System Admin',
-    avatarText: 'T',
-    color: '#5865F2',
-    text: 'Heads up — InactiveDev posted a suspicious link in #general earlier. I flagged it for review.',
-    timestamp: 'Today at 2:15 PM',
-  },
-];
-
 export default function AdminPanel() {
   const normalizeUser = (user: any): ManagedUser => {
     const username = user.username || 'unknown';
     const displayName = username.split(/[_\s-]+/).filter(Boolean);
-    const firstName = displayName[0] ? displayName[0].replace(/^[a-z]/, c => c.toUpperCase()) : 'User';
-    const lastName = displayName[1] ? displayName[1].replace(/^[a-z]/, c => c.toUpperCase()) : 'Account';
+    const firstName = displayName[0] ? displayName[0].replace(/^[a-z]/, (c: string) => c.toUpperCase()) : 'User';
+    const lastName = displayName[1] ? displayName[1].replace(/^[a-z]/, (c: string) => c.toUpperCase()) : 'Account';
 
     return {
       id: user._id || user.id,
