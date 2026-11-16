@@ -6,6 +6,7 @@ const {
   resendVerification,
   forgotPassword,
   resetPassword,
+  changePassword,
 } = require("../controllers/authController");
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -19,6 +20,7 @@ router.post("/verify-email", verifyEmail);
 router.post("/resend-verification", resendVerification);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
+router.post("/change-password", authMiddleware, changePassword);
 
 router.get("/me", authMiddleware, getProfile);
 router.patch("/me", authMiddleware, updateProfile);

@@ -576,6 +576,45 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// POST /api/auth/change-password
+const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (
+    typeof currentPassword !== "string" ||
+    !currentPassword ||
+    typeof newPassword !== "string" ||
+    newPassword.length < 8
+  ) {
+    return res.status(400).json({
+      error: "Current password and a new password of at least 8 characters are required",
+    });
+  }
+
+  try {
+    const user = await User.findById(req.user?.userId);
+
+    if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      return res.status(400).json({
+        error: "Current password is incorrect",
+      });
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    return res.status(200).json({
+      message: "Password changed successfully.",
+    });
+  } catch (error) {
+    console.error("Change password error:", error.message);
+
+    return res.status(500).json({
+      error: "Server error",
+    });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -583,4 +622,5 @@ module.exports = {
   resendVerification,
   forgotPassword,
   resetPassword,
+  changePassword,
 };
