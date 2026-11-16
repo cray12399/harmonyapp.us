@@ -1,4 +1,4 @@
-const { before, after, test } = require("node:test");
+const { before, beforeEach, after, test } = require("node:test");
 const assert = require("node:assert/strict");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -17,30 +17,31 @@ const conversationId = new mongoose.Types.ObjectId();
 const testPasswordHash = bcrypt.hashSync("password123", 4);
 const resendApiKeyBeforeTests = process.env.RESEND_API_KEY;
 delete process.env.RESEND_API_KEY;
-const users = new Map([
-  [String(adminId), {
-    _id: adminId,
-    username: "admin",
-    nickname: "Admin",
-    email: "admin@example.com",
-    passwordHash: testPasswordHash,
-    status: 2,
-    isVerified: true,
-    createdAt: new Date(),
-    save: async function () { users.set(String(this._id), this); },
-  }],
-  [String(memberId), {
-    _id: memberId,
-    username: "member",
-    nickname: "Member",
-    email: "member@example.com",
-    passwordHash: testPasswordHash,
-    status: 1,
-    isVerified: true,
-    createdAt: new Date(),
-    save: async function () { users.set(String(this._id), this); },
-  }],
-]);
+const users = new Map();
+const makeUser = (_id, username, nickname, email, status = 1) => ({
+  _id,
+  username,
+  nickname,
+  email,
+  passwordHash: testPasswordHash,
+  status,
+  isVerified: true,
+  createdAt: new Date(),
+  save: async function () { users.set(String(this._id), this); },
+});
+
+// Each test starts with independent accounts. Earlier tests promote and edit users.
+const resetUsers = () => {
+  users.clear();
+  for (const user of [
+    makeUser(adminId, "admin", "Admin", "admin@example.com", 2),
+    makeUser(memberId, "member", "Member", "member@example.com"),
+    makeUser(otherId1, "other1", "Other One", "other1@example.com"),
+    makeUser(otherId2, "other2", "Other Two", "other2@example.com"),
+  ]) {
+    users.set(String(user._id), user);
+  }
+};
 const secretBeforeTests = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "local-test-secret-that-is-not-used-for-deployment";
 
@@ -114,11 +115,21 @@ before(async () => {
     }
     return query(null, ["select"]);
   });
-  replace(User, "countDocuments", (filter) =>
-    query([...users.values()].filter((user) =>
-      user.status === filter.status && (!filter.isVerified || user.isVerified)
-    ).length, [])
-  );
+  replace(User, "countDocuments", (filter) => {
+    const matches = (value, condition) => {
+      if (condition === undefined) return true;
+      if (Array.isArray(condition?.$in)) {
+        return condition.$in.some((item) => String(item) === String(value));
+      }
+      return String(value) === String(condition);
+    };
+
+    return query([...users.values()].filter((user) =>
+      matches(user._id, filter._id) &&
+      matches(user.status, filter.status) &&
+      matches(user.isVerified, filter.isVerified)
+    ).length, []);
+  });
   replace(User, "findOne", (filter) => {
     if (filter.username !== undefined || filter.email !== undefined) {
       return query(null, []);
@@ -181,6 +192,12 @@ after(async () => {
   if (server) {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+beforeEach(() => {
+  resetUsers();
+  canAccessConversation = true;
+  lastMessage = undefined;
 });
 
 const request = async (path, { token, method = "GET", body } = {}) => {
