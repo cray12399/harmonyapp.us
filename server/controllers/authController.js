@@ -177,6 +177,11 @@ const login = async (req, res) => {
       return res.status(401).json({ error: "Invalid username/email or password" });
     }
 
+    // Do not issue a new token to a disabled account.
+    if (user.status !== 1 && user.status !== 2) {
+      return res.status(403).json({ error: "Account disabled" });
+    }
+
     if (!user.isVerified) {
       return res.status(403).json({ error: "Please verify your email before logging in" });
     }

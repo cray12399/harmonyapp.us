@@ -2,6 +2,9 @@ const express = require("express");
 const {
   listUsers,
   updateUserStatus,
+  listReports,
+  resolveReport,
+  removeMessage,
 } = require("../controllers/adminController");
 
 const createAdminRouter = ({ requireAuth, requireAdmin }) => {
@@ -22,6 +25,9 @@ const createAdminRouter = ({ requireAuth, requireAdmin }) => {
 
   router.get("/users", listUsers);
   router.patch("/users/:id", updateUserStatus);
+  router.get("/reports", listReports);
+  router.patch("/reports/:id", resolveReport);
+  router.delete("/messages/:id", removeMessage);
 
   return router;
 };

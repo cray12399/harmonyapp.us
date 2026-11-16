@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Register() {
   const [username, setUsername] = useState('');
+  const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -43,7 +44,7 @@ export default function Register() {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ username, nickname, email, password }),
       });
 
       const data = await response.json();
@@ -139,6 +140,20 @@ export default function Register() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '3px', color: '#f2f3f5', fontSize: '16px', boxSizing: 'border-box', outline: 'none' }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 'bold', color: '#b5bac1', textTransform: 'uppercase' }}>
+                Display name <span style={{ color: '#f23f43' }}>*</span>
+              </label>
+              <input
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                maxLength={32}
                 style={{ width: '100%', padding: '10px 12px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '3px', color: '#f2f3f5', fontSize: '16px', boxSizing: 'border-box', outline: 'none' }}
                 required
               />

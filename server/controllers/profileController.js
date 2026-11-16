@@ -14,7 +14,7 @@ const getProfile = async (req, res) => {
 
     const user = await User.findById(userId).select(
       "_id username nickname email isVerified status avatar statusMessage createdAt"
-    );
+    ).lean();
 
     if (!user) {
       return res.status(404).json({
@@ -23,6 +23,8 @@ const getProfile = async (req, res) => {
     }
 
     return res.status(200).json({
+      message: "Authenticated successfully",
+      userId: String(user._id),
       user: {
         _id: user._id,
         username: user.username,

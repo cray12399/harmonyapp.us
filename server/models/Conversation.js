@@ -4,7 +4,6 @@ const conversationSchema = new mongoose.Schema(
   {
     // 0 = DM; 1 = group chat.
     type: { type: Number, enum: [0, 1], required: true },
-    dmKey: { type: String, default: undefined },
     name: { type: String, trim: true, maxlength: 80, default: null },
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     createdBy: {
@@ -12,6 +11,8 @@ const conversationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // Stable pair key prevents two simultaneous requests creating duplicate DMs.
+    dmKey: { type: String, default: undefined },
     lastMessageAt: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
   },
@@ -19,12 +20,6 @@ const conversationSchema = new mongoose.Schema(
 );
 
 conversationSchema.index({ members: 1 });
-conversationSchema.index(
-  { dmKey: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { dmKey: { $type: "string" } },
-  }
-);
+conversationSchema.index({ dmKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Conversation", conversationSchema);
