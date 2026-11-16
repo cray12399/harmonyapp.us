@@ -1,8 +1,10 @@
 // app/index.tsx
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Modal, Scrollable } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Modal } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const API_BASE_URL = 'https://harmonyapp.us/api';
 
 export default function LoginScreen() {
   const [identifier, setIdentifier] = useState('');
@@ -14,15 +16,22 @@ export default function LoginScreen() {
   const [forgotEmail, setForgotEmail] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetStep, setResetStep] = useState(1);
   const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifyMessage, setVerifyMessage] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   const router = useRouter();
 
   const handleLogin = async () => {
     setMessage('Logging in...');
     try {
-      const response = await fetch('https://harmonyapp.us/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password }),
@@ -40,6 +49,95 @@ export default function LoginScreen() {
       setTimeout(() => router.replace('/dashboard'), 800);
     } catch (err: any) {
       setMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const handleRequestReset = async () => {
+    if (!forgotEmail.trim()) {
+      setForgotMessage('Enter your account email.');
+      return;
+    }
+    setForgotLoading(true);
+    setForgotMessage('Sending reset code...');
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not request a reset code.');
+      setForgotMessage('If the account exists, a reset code has been sent.');
+      setResetStep(2);
+    } catch (error: any) {
+      setForgotMessage(`Error: ${error.message}`);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleConfirmReset = async () => {
+    if (newPassword.length < 8) {
+      setForgotMessage('Error: Password must be at least 8 characters.');
+      return;
+    }
+    setForgotLoading(true);
+    setForgotMessage('Resetting password...');
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim(), code: resetCode.trim(), newPassword }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not reset the password.');
+      setForgotMessage('Password reset. You can now sign in.');
+      setResetStep(1);
+      setResetCode('');
+      setNewPassword('');
+    } catch (error: any) {
+      setForgotMessage(`Error: ${error.message}`);
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleRequestVerification = async () => {
+    setVerifyLoading(true);
+    setVerifyMessage('Requesting verification code...');
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyEmail.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not request a verification code.');
+      setVerifyMessage('If the account exists and needs verification, a code was sent to its email.');
+    } catch (error: any) {
+      setVerifyMessage(`Error: ${error.message}`);
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleConfirmVerification = async () => {
+    setVerifyLoading(true);
+    setVerifyMessage('Verifying email...');
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyEmail.trim(), code: verificationCode.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Verification failed.');
+      setVerifyMessage('Email verified. You can now sign in.');
+      setVerificationCode('');
+    } catch (error: any) {
+      setVerifyMessage(`Error: ${error.message}`);
+    } finally {
+      setVerifyLoading(false);
     }
   };
 
@@ -76,7 +174,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => setShowForgotModal(true)} style={styles.forgotLink}>
+        <TouchableOpacity onPress={() => { setForgotMessage(''); setResetStep(1); setResetCode(''); setNewPassword(''); setShowForgotModal(true); }} style={styles.forgotLink}>
           <Text style={{ color: '#00a8fc', fontSize: 13 }}>Forgot your password?</Text>
         </TouchableOpacity>
 
@@ -91,6 +189,17 @@ export default function LoginScreen() {
             Need an account? <Text style={{ color: '#00a8fc' }}>Register</Text>
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            setVerifyEmail(identifier.includes('@') ? identifier : '');
+            setVerificationCode('');
+            setVerifyMessage('');
+            setShowVerifyModal(true);
+          }}
+          style={{ marginTop: 12 }}
+        >
+          <Text style={{ color: '#00a8fc', textAlign: 'center', fontSize: 13 }}>Verify an existing account</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Forgot Password Modal */}
@@ -103,20 +212,73 @@ export default function LoginScreen() {
                 <Text style={{ color: '#949ba4', fontSize: 13, marginBottom: 16 }}>Enter your account email to receive a 6-digit reset code.</Text>
                 <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#72767d" value={forgotEmail} onChangeText={setForgotEmail} />
                 <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-                  <TouchableOpacity onPress={() => setShowForgotModal(false)}><Text style={{ color: '#fff', padding: 8 }}>Cancel</Text></TouchableOpacity>
-                  <TouchableOpacity style={styles.smallButton} onPress={() => setResetStep(2)}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Send Code</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowForgotModal(false)} disabled={forgotLoading}><Text style={{ color: '#fff', padding: 8 }}>Cancel</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.smallButton} onPress={() => void handleRequestReset()} disabled={forgotLoading}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{forgotLoading ? 'Sending…' : 'Send Code'}</Text></TouchableOpacity>
                 </View>
               </>
             ) : (
               <>
-                <TextInput style={styles.input} placeholder="6-digit code" placeholderTextColor="#72767d" maxLength={6} value={resetCode} onChangeText={setResetCode} />
-                <TextInput style={[styles.input, { marginTop: 10 }]} placeholder="New password" placeholderTextColor="#72767d" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
+                <TextInput style={styles.input} placeholder="6-digit code" placeholderTextColor="#72767d" maxLength={6} keyboardType="number-pad" value={resetCode} onChangeText={setResetCode} />
+                <View style={[styles.passwordContainer, { marginTop: 10 }]}>
+                  <TextInput style={[styles.input, { flex: 1, borderWidth: 0, marginBottom: 0 }]} placeholder="New password" placeholderTextColor="#72767d" secureTextEntry={!showResetPassword} value={newPassword} onChangeText={setNewPassword} />
+                  <TouchableOpacity onPress={() => setShowResetPassword(!showResetPassword)} style={styles.eyeBtn}>
+                    <Text style={{ color: '#b5bac1' }}>{showResetPassword ? 'Hide' : 'Show'}</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-                  <TouchableOpacity onPress={() => setShowForgotModal(false)}><Text style={{ color: '#fff', padding: 8 }}>Cancel</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.smallButton, { backgroundColor: '#23a55a' }]} onPress={() => setShowForgotModal(false)}><Text style={{ color: '#fff', fontWeight: 'bold' }}>Update</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowForgotModal(false)} disabled={forgotLoading}><Text style={{ color: '#fff', padding: 8 }}>Cancel</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.smallButton, { backgroundColor: '#23a55a' }]} onPress={() => void handleConfirmReset()} disabled={forgotLoading}><Text style={{ color: '#fff', fontWeight: 'bold' }}>{forgotLoading ? 'Updating…' : 'Update'}</Text></TouchableOpacity>
                 </View>
               </>
             )}
+            {forgotMessage ? (
+              <Text style={{ color: forgotMessage.startsWith('Error:') ? '#f23f43' : '#23a55a', marginTop: 12, fontSize: 13 }}>
+                {forgotMessage}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showVerifyModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={{ color: '#f2f3f5', fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>Verify Email</Text>
+            <Text style={{ color: '#949ba4', fontSize: 13, marginBottom: 16 }}>Use the code from your email, or request a new one if needed.</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Email address"
+              placeholderTextColor="#72767d"
+              value={verifyEmail}
+              onChangeText={setVerifyEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="6-digit code"
+              placeholderTextColor="#72767d"
+              value={verificationCode}
+              onChangeText={setVerificationCode}
+              maxLength={6}
+              keyboardType="number-pad"
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+              <TouchableOpacity onPress={() => void handleRequestVerification()} disabled={verifyLoading || !verifyEmail.trim()}>
+                <Text style={{ color: '#00a8fc', padding: 8 }}>{verifyLoading ? 'Sending…' : 'Resend Code'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.smallButton, { backgroundColor: '#23a55a' }]} onPress={() => void handleConfirmVerification()} disabled={verifyLoading || verificationCode.length !== 6 || !verifyEmail.trim()}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>{verifyLoading ? 'Verifying…' : 'Verify Email'}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={() => setShowVerifyModal(false)} disabled={verifyLoading} style={{ marginTop: 10 }}>
+              <Text style={{ color: '#949ba4', textAlign: 'right' }}>Close</Text>
+            </TouchableOpacity>
+            {verifyMessage ? (
+              <Text style={{ color: verifyMessage.startsWith('Error:') ? '#f23f43' : '#23a55a', marginTop: 12, fontSize: 13 }}>
+                {verifyMessage}
+              </Text>
+            ) : null}
           </View>
         </View>
       </Modal>

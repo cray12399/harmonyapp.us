@@ -17,6 +17,7 @@ const messageForClient = (message) => ({
   conversation: message.conversation,
   sender: message.sender?._id ?? message.sender,
   senderUsername: message.sender?.username ?? null,
+  senderNickname: message.sender?.nickname ?? null,
   content: message.isRemoved ? REMOVED_MESSAGE_TEXT : message.content,
   isRemoved: message.isRemoved,
   createdAt: message.createdAt,
@@ -51,7 +52,7 @@ const listConversations = async (req, res) => {
     })
       .select(CONVERSATION_FIELDS)
       .sort({ lastMessageAt: -1, createdAt: -1 })
-      .populate("members", "_id username")
+      .populate("members", "_id username nickname")
       .lean();
 
     return res.status(200).json({ conversations });
@@ -134,7 +135,7 @@ const createConversation = async (req, res) => {
         members: { $all: [req.user._id, otherIds[0]], $size: 2 },
       })
         .select(CONVERSATION_FIELDS)
-        .populate("members", "_id username")
+        .populate("members", "_id username nickname")
         .lean();
 
       if (existing) {
@@ -150,10 +151,10 @@ const createConversation = async (req, res) => {
       createdBy: req.user._id,
     });
 
-    // Include member usernames so the UI can show the conversation immediately.
+    // Include member display names so the UI can show the conversation immediately.
     const conversation = await Conversation.findById(created._id)
       .select(CONVERSATION_FIELDS)
-      .populate("members", "_id username")
+      .populate("members", "_id username nickname")
       .lean();
 
     return res.status(201).json({ conversation });
@@ -161,7 +162,7 @@ const createConversation = async (req, res) => {
     if (type === 0 && error.code === 11000) {
       const existing = await Conversation.findOne({ dmKey })
         .select(CONVERSATION_FIELDS)
-        .populate("members", "_id username")
+        .populate("members", "_id username nickname")
         .lean();
       if (existing) return res.status(200).json({ conversation: existing });
     }
@@ -208,7 +209,7 @@ const listMessages = async (req, res) => {
     const messages = await Message.find(filter)
       .select(MESSAGE_FIELDS)
       .sort({ createdAt: 1, _id: 1 })
-      .populate("sender", "_id username")
+      .populate("sender", "_id username nickname")
       .lean();
 
     return res.status(200).json({
@@ -275,10 +276,115 @@ const sendMessage = async (req, res) => {
       message: {
         ...messageForClient(message),
         senderUsername: req.user.username,
+        senderNickname: req.user.nickname,
       },
     });
   } catch (error) {
     console.error("Could not send message:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+const deleteGroup = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.isValidObjectId(id)) {
+    return res.status(400).json({ error: "Invalid group ID" });
+  }
+
+  try {
+    const result = await mongoose.connection.transaction(async (session) => {
+      const group = await Conversation.findOne({ _id: id, type: 1 }).session(session);
+      if (!group) return { status: 404, error: "Group not found" };
+      if (String(group.createdBy) !== String(req.user._id)) {
+        return { status: 403, error: "Only the group creator can delete this group" };
+      }
+
+      const groupMessages = await Message.find({ conversation: id })
+        .select("_id")
+        .session(session)
+        .lean();
+      const groupMessageIds = groupMessages.map((message) => message._id);
+      const reportedMessages = groupMessageIds.length
+        ? await MessageReport.find({
+            message: { $in: groupMessageIds },
+          })
+            .select("message")
+            .session(session)
+            .lean()
+        : [];
+      const retainedMessageIds = reportedMessages.map((report) => report.message);
+
+      await Message.deleteMany(
+        {
+          conversation: id,
+          _id: { $nin: retainedMessageIds },
+        },
+        { session }
+      );
+      await Conversation.deleteOne({ _id: id }, { session });
+
+      return { status: 200 };
+    });
+
+    return res.status(result.status).json(
+      result.error ? { error: result.error } : { message: "Group deleted" }
+    );
+  } catch (error) {
+    console.error("Could not delete group:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
+const leaveGroup = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.isValidObjectId(id)) {
+    return res.status(400).json({ error: "Invalid group ID" });
+  }
+
+  try {
+    const result = await mongoose.connection.transaction(async (session) => {
+      const group = await Conversation.findOne({ _id: id, type: 1 }).session(session);
+      if (!group) return { status: 404, error: "Group not found" };
+      if (String(group.createdBy) === String(req.user._id)) {
+        return { status: 409, error: "The group creator must delete the group instead" };
+      }
+      if (!group.members.some((memberId) => String(memberId) === String(req.user._id))) {
+        return { status: 404, error: "You are not a member of this group" };
+      }
+
+      const updatedGroup = await Conversation.findOneAndUpdate(
+        {
+          _id: id,
+          type: 1,
+          createdBy: { $ne: req.user._id },
+          members: req.user._id,
+        },
+        { $pull: { members: req.user._id } },
+        { new: true, session }
+      );
+      if (!updatedGroup) {
+        return { status: 404, error: "You are not a member of this group" };
+      }
+
+      const [leaveMessage] = await Message.create(
+        [{
+          conversation: id,
+          sender: req.user._id,
+          content: "left the group.",
+        }],
+        { session }
+      );
+      updatedGroup.lastMessageAt = leaveMessage.createdAt;
+      await updatedGroup.save({ session });
+
+      return { status: 200 };
+    });
+
+    return res.status(result.status).json(
+      result.error ? { error: result.error } : { message: "You left the group" }
+    );
+  } catch (error) {
+    console.error("Could not leave group:", error);
     return res.status(500).json({ error: "Server error" });
   }
 };
@@ -334,5 +440,7 @@ module.exports = {
   createConversation,
   listMessages,
   sendMessage,
+  deleteGroup,
+  leaveGroup,
   reportMessage,
 };

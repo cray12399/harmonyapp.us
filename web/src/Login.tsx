@@ -12,8 +12,14 @@ export default function Login() {
   const [forgotEmail, setForgotEmail] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetStep, setResetStep] = useState(1); // 1 = Request Code, 2 = Enter Code & New Password
   const [forgotMessage, setForgotMessage] = useState('');
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verifyMessage, setVerifyMessage] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
 
   const navigate = useNavigate();
 
@@ -81,6 +87,46 @@ export default function Login() {
       }, 1500);
     } catch (err: any) {
       setForgotMessage(`Error: ${err.message}`);
+    }
+  };
+
+  const handleRequestVerification = async () => {
+    setVerifyLoading(true);
+    setVerifyMessage('Requesting verification code...');
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyEmail.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not request a verification code.');
+      setVerifyMessage('If the account exists and needs verification, a code was sent to its email.');
+    } catch (error: any) {
+      setVerifyMessage(`Error: ${error.message}`);
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleConfirmVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerifyLoading(true);
+    setVerifyMessage('Verifying email...');
+    try {
+      const response = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyEmail.trim(), code: verificationCode.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Verification failed.');
+      setVerifyMessage('Email verified. You can now sign in.');
+      setVerificationCode('');
+    } catch (error: any) {
+      setVerifyMessage(`Error: ${error.message}`);
+    } finally {
+      setVerifyLoading(false);
     }
   };
 
@@ -161,6 +207,19 @@ export default function Login() {
         <div style={{ marginTop: '20px', fontSize: '14px', color: '#949ba4', textAlign: 'center' }}>
           Need an account? <span style={{ color: '#00a8fc', cursor: 'pointer' }} onClick={() => navigate('/register')}>Register</span>
         </div>
+        <div style={{ marginTop: '10px', fontSize: '13px', textAlign: 'center' }}>
+          <span
+            style={{ color: '#00a8fc', cursor: 'pointer' }}
+            onClick={() => {
+              setVerifyEmail(identifier.includes('@') ? identifier : '');
+              setVerificationCode('');
+              setVerifyMessage('');
+              setShowVerifyModal(true);
+            }}
+          >
+            Verify an existing account
+          </span>
+        </div>
       </div>
 
       {/* Forgot Password Modal */}
@@ -181,14 +240,38 @@ export default function Login() {
               <form onSubmit={handleConfirmReset}>
                 <p style={{ color: '#949ba4', fontSize: '13px', marginBottom: '16px' }}>Enter the 6-digit code and your new password (min 8 chars).</p>
                 <input type="text" maxLength={6} placeholder="6-digit code" value={resetCode} onChange={(e) => setResetCode(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '12px', outline: 'none' }} required />
-                <input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '16px', outline: 'none' }} required />
+                <div style={{ position: 'relative', marginBottom: '16px' }}>
+                  <input type={showResetPassword ? 'text' : 'password'} placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={{ width: '100%', padding: '10px 40px 10px 12px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', outline: 'none', boxSizing: 'border-box' }} required />
+                  <span onClick={() => setShowResetPassword(!showResetPassword)} style={{ position: 'absolute', right: '12px', top: '10px', cursor: 'pointer', color: '#b5bac1' }}>
+                    {renderEyeIcon(showResetPassword)}
+                  </span>
+                </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                   <button type="button" onClick={() => setShowForgotModal(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}>Cancel</button>
                   <button type="submit" style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>Update Password</button>
                 </div>
               </form>
             )}
+
             {forgotMessage && <p style={{ marginTop: '12px', fontSize: '13px', color: forgotMessage.includes('Error') ? '#f23f43' : '#23a55a' }}>{forgotMessage}</p>}
+          </div>
+        </div>
+      )}
+      {showVerifyModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 120 }}>
+          <div style={{ backgroundColor: '#313338', padding: '32px', borderRadius: '8px', width: '420px', maxWidth: '90vw', boxShadow: '0 12px 32px rgba(0,0,0,0.6)' }}>
+            <h3 style={{ color: '#f2f3f5', marginBottom: '12px' }}>Verify Email</h3>
+            <form onSubmit={handleConfirmVerification}>
+              <p style={{ color: '#949ba4', fontSize: '13px', marginBottom: '16px' }}>Use the code from your email, or request a new one if needed.</p>
+              <input type="email" placeholder="Email address" value={verifyEmail} onChange={(e) => setVerifyEmail(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '12px', outline: 'none' }} required />
+              <input type="text" inputMode="numeric" maxLength={6} placeholder="6-digit code" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#1e1f22', border: '1px solid #111214', borderRadius: '4px', color: '#fff', marginBottom: '16px', outline: 'none', textAlign: 'center', letterSpacing: '5px' }} required />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button type="button" onClick={() => void handleRequestVerification()} disabled={verifyLoading || !verifyEmail.trim()} style={{ background: 'none', border: 'none', color: '#00a8fc', cursor: 'pointer' }}>{verifyLoading ? 'Sending…' : 'Resend Code'}</button>
+                <button type="submit" disabled={verifyLoading} style={{ backgroundColor: '#23a55a', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>{verifyLoading ? 'Verifying…' : 'Verify Email'}</button>
+              </div>
+              <button type="button" onClick={() => setShowVerifyModal(false)} disabled={verifyLoading} style={{ background: 'none', border: 'none', color: '#949ba4', cursor: 'pointer', marginTop: '12px' }}>Close</button>
+            </form>
+            {verifyMessage && <p style={{ marginTop: '12px', fontSize: '13px', color: verifyMessage.startsWith('Error:') ? '#f23f43' : '#23a55a' }}>{verifyMessage}</p>}
           </div>
         </div>
       )}

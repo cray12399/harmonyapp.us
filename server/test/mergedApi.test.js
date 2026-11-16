@@ -5,6 +5,8 @@ const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const Conversation = require("../models/Conversation");
+const Message = require("../models/Message");
+const MessageReport = require("../models/MessageReport");
 const Friendship = require("../models/Friendship");
 const RevokedToken = require("../models/RevokedToken");
 const app = require("../server");
@@ -13,6 +15,7 @@ const app = require("../server");
 const callerId = new mongoose.Types.ObjectId();
 const otherId = new mongoose.Types.ObjectId();
 const conversationId = new mongoose.Types.ObjectId();
+const groupId = new mongoose.Types.ObjectId();
 const friendshipId = new mongoose.Types.ObjectId();
 const previousSecret = process.env.JWT_SECRET;
 process.env.JWT_SECRET = "merged-api-test-secret";
@@ -36,6 +39,7 @@ const query = (value) => ({
   limit() { return this; },
   populate() { return this; },
   sort() { return this; },
+  session() { return this; },
   lean: async () => value,
   then(resolve, reject) { return Promise.resolve(value).then(resolve, reject); },
 });
@@ -59,6 +63,9 @@ const other = {
 
 let server;
 let dm;
+let group;
+let groupMessages = [];
+let groupReports = [];
 let friendship;
 const revoked = new Set();
 
@@ -71,10 +78,61 @@ before(async () => {
   );
   replace(User, "find", () => query([other]));
 
-  replace(Conversation, "findOne", async () => dm);
+  replace(Conversation, "findOne", (filter) =>
+    query(filter.type === 1 ? group : dm)
+  );
+  replace(Conversation, "findOneAndUpdate", async (filter) => {
+    if (!group || !group.members.some((id) => String(id) === String(filter.members))) {
+      return null;
+    }
+    group.members = group.members.filter((id) => String(id) !== String(filter.members));
+    return group;
+  });
+  replace(Conversation, "exists", async () => true);
+  replace(Conversation, "updateOne", async () => ({ acknowledged: true }));
+  replace(Conversation, "deleteOne", async () => {
+    group = null;
+    return { deletedCount: 1 };
+  });
   replace(Conversation, "create", async (data) => {
     dm = { _id: conversationId, ...data, save: async () => {} };
     return dm;
+  });
+  replace(mongoose.connection, "transaction", async (callback) => callback({}));
+  replace(Message, "find", (filter) => query(
+    groupMessages.filter((message) => String(message.conversation) === String(filter.conversation))
+  ));
+  replace(MessageReport, "find", (filter = {}) => query(
+    filter.message?.$in
+      ? groupReports.filter((report) =>
+          filter.message.$in.some((messageId) => String(messageId) === String(report.message))
+        )
+      : groupReports
+  ));
+  replace(Message, "create", async (data) => {
+    const records = (Array.isArray(data) ? data : [data]).map((message) => ({
+      _id: new mongoose.Types.ObjectId(),
+      createdAt: new Date(),
+      ...message,
+    }));
+    groupMessages.push(...records);
+    return Array.isArray(data) ? records : records[0];
+  });
+  replace(Message, "deleteMany", async (filter) => {
+    const previousLength = groupMessages.length;
+    const retainedIds = new Set((filter._id?.$nin || []).map(String));
+    groupMessages = groupMessages.filter(
+      (message) =>
+        String(message.conversation) !== String(filter.conversation) ||
+        retainedIds.has(String(message._id))
+    );
+    return { deletedCount: previousLength - groupMessages.length };
+  });
+  replace(MessageReport, "deleteMany", async (filter) => {
+    const messageIds = new Set(filter.message.$in.map(String));
+    const previousLength = groupReports.length;
+    groupReports = groupReports.filter((report) => !messageIds.has(String(report.message)));
+    return { deletedCount: previousLength - groupReports.length };
   });
 
   replace(Friendship, "findOne", async () => friendship);
@@ -172,6 +230,15 @@ test("authenticated user search and DM creation work", async () => {
   assert.equal(second.body.conversation._id, String(conversationId));
 });
 
+test("sent messages include the sender nickname", async () => {
+  const sent = await request(`/api/conversations/${conversationId}/messages`, {
+    method: "POST",
+    body: { content: "Hello" },
+  });
+  assert.equal(sent.status, 201);
+  assert.equal(sent.body.message.senderNickname, caller.nickname);
+});
+
 test("friend requests can be sent, accepted, listed, and removed", async () => {
   const sent = await request("/api/friends/requests", {
     method: "POST",
@@ -190,6 +257,81 @@ test("friend requests can be sent, accepted, listed, and removed", async () => {
     method: "DELETE",
   });
   assert.equal(removed.status, 200);
+});
+
+test("non-creators can leave groups without deleting messages or reports", async () => {
+  const existingMessage = {
+    _id: new mongoose.Types.ObjectId(),
+    conversation: groupId,
+    sender: callerId,
+    content: "Keep this message",
+  };
+  group = {
+    _id: groupId,
+    type: 1,
+    createdBy: callerId,
+    members: [callerId, otherId],
+    lastMessageAt: new Date(),
+    save: async () => {},
+  };
+  groupMessages = [existingMessage];
+  groupReports = [{ message: existingMessage._id, reason: "Keep this report" }];
+
+  const creatorLeave = await request(`/api/conversations/${groupId}/leave`, {
+    method: "POST",
+  });
+  assert.equal(creatorLeave.status, 409);
+
+  const left = await request(`/api/conversations/${groupId}/leave`, {
+    auth: otherToken,
+    method: "POST",
+  });
+  assert.equal(left.status, 200);
+  assert.equal(group.members.some((id) => String(id) === String(otherId)), false);
+  assert.equal(groupMessages.length, 2);
+  assert.equal(groupMessages[1].content, "left the group.");
+  assert.equal(groupReports.length, 1);
+});
+
+test("only group creators can delete groups while reported messages and reports remain", async () => {
+  const reportedMessage = {
+    _id: new mongoose.Types.ObjectId(),
+    conversation: groupId,
+    sender: callerId,
+    content: "Keep this reported message",
+  };
+  const unreportedMessage = {
+    _id: new mongoose.Types.ObjectId(),
+    conversation: groupId,
+    sender: otherId,
+    content: "Delete this unreported message",
+  };
+  group = {
+    _id: groupId,
+    type: 1,
+    createdBy: callerId,
+    members: [callerId, otherId],
+  };
+  groupMessages = [reportedMessage, unreportedMessage];
+  groupReports = [{ message: reportedMessage._id, reason: "Keep this report" }];
+
+  const denied = await request(`/api/conversations/${groupId}`, {
+    auth: otherToken,
+    method: "DELETE",
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(groupMessages.length, 2);
+  assert.equal(groupReports.length, 1);
+
+  const deleted = await request(`/api/conversations/${groupId}`, {
+    method: "DELETE",
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal(group, null);
+  assert.deepEqual(groupMessages.map((message) => message._id), [reportedMessage._id]);
+  assert.equal(groupMessages[0].content, "Keep this reported message");
+  assert.equal(groupReports.length, 1);
+  assert.equal(String(groupReports[0].message), String(reportedMessage._id));
 });
 
 test("logout revokes only the supplied JWT", async () => {
